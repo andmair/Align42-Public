@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Align42</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <script>
+    (function enforceHttpOriginSafely() {
+      if (window.location.protocol !== "file:") return;
+      var base = "http://localhost:8000";
+      var target = base + "/Align42.html" + (window.location.search || "") + (window.location.hash || "");
+
+      var timeout = 1200;
+      var done = false;
+      function staySilent() {
+        if (done) return;
+        done = true;
+      }
+
+      var timer = setTimeout(staySilent, timeout);
+      fetch(base + "/Align42.html", { method: "HEAD", mode: "no-cors" })
+        .then(function () {
+          if (done) return;
+          done = true;
+          clearTimeout(timer);
+          window.location.replace(target);
+        })
+        .catch(function () {
+          clearTimeout(timer);
+          staySilent();
+        });
+    })();
+  </script>
+  <div class="bg-shape bg-a"></div>
+  <div class="bg-shape bg-b"></div>
+  <div id="app"></div>
+  <script src="app.js"></script>
+</body>
+</html>

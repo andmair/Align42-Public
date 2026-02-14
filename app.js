@@ -1,0 +1,3433 @@
+const STORAGE = {
+  profile: "align42_profile_v1",
+  settings: "align42_settings_v1",
+  assessments: "align42_assessments_v1"
+};
+
+const OPENAI_SETUP_URL = "https://platform.openai.com/docs/quickstart?api-mode=responses";
+const ANTHROPIC_SETUP_URL = "https://docs.anthropic.com/en/api/getting-started";
+const GEMINI_SETUP_URL = "https://ai.google.dev/gemini-api/docs/api-key";
+const AZURE_OPENAI_SETUP_URL = "https://learn.microsoft.com/azure/ai-services/openai/how-to/create-resource";
+const AI_PROVIDER_TIMEOUT_MS = 60000;
+const COUNTRY_OPTIONS = ["Australia", "Canada", "France", "Germany", "India", "Ireland", "Japan", "Netherlands", "New Zealand", "Singapore", "South Africa", "Spain", "Sweden", "Switzerland", "United Arab Emirates", "United Kingdom", "United States"];
+const STATE_OPTIONS = {
+  "United States": ["Alabama", "Alaska", "Arizona", "California", "Colorado", "Florida", "Georgia", "Illinois", "Massachusetts", "Michigan", "New York", "North Carolina", "Ohio", "Pennsylvania", "Texas", "Virginia", "Washington"],
+  Canada: ["Alberta", "British Columbia", "Manitoba", "Nova Scotia", "Ontario", "Quebec", "Saskatchewan"],
+  Australia: ["Australian Capital Territory", "New South Wales", "Queensland", "South Australia", "Tasmania", "Victoria", "Western Australia"],
+  India: ["Delhi", "Gujarat", "Karnataka", "Maharashtra", "Tamil Nadu", "Telangana", "Uttar Pradesh"]
+};
+const ISIC_SECTORS = [
+  "A: Agriculture, forestry and fishing",
+  "B: Mining and quarrying",
+  "C: Manufacturing",
+  "D: Electricity, gas, steam and air conditioning supply",
+  "E: Water supply; sewerage, waste management and remediation",
+  "F: Construction",
+  "G: Wholesale and retail trade; repair of motor vehicles and motorcycles",
+  "H: Transportation and storage",
+  "I: Accommodation and food service activities",
+  "J: Information and communication",
+  "K: Financial and insurance activities",
+  "L: Real estate activities",
+  "M: Professional, scientific and technical activities",
+  "N: Administrative and support service activities",
+  "O: Public administration and defence; compulsory social security",
+  "P: Education",
+  "Q: Human health and social work activities",
+  "R: Arts, entertainment and recreation",
+  "S: Other service activities"
+];
+
+const sections = [
+  {
+    id: "context",
+    title: "Business Context",
+    description: "Capture organisation profile and accountability structure.",
+    type: "context",
+    fields: [
+      { key: "orgName", label: "Organisation name", type: "text", required: true, starter: "Example: Northbridge Financial Services" },
+      { key: "businessOverview", label: "Business Overview", type: "textarea", required: true, starter: "Summarize your organisation's purpose/mission, primary markets/geographies served, type of business (e.g., B2B, B2C, public sector), and core products/services." },
+      { key: "industry", label: "Industry", type: "text", required: true, starter: "Example: Banking, Healthcare, Retail, Public Sector" },
+      { key: "size", label: "Organisation size (employees)", type: "number", required: true, starter: "Example: 2500" },
+      { key: "platforms", label: "Primary IT platforms", type: "textarea", starter: "List cloud providers, ERP/CRM platforms, data stack, developer platforms, and collaboration tools." },
+      { key: "roles", label: "Key roles with accountability for IT, Risk and Compliance", type: "textarea", required: true, starter: "List accountable roles and responsibilities, e.g., CIO (IT operations), CRO (risk framework), CCO (regulatory compliance), CISO (security controls)." },
+      { key: "geoRegScope", label: "Regulatory and geographic scope", type: "geo_reg_scope", required: true }
+    ]
+  },
+  {
+    id: "maturity",
+    title: "AI Maturity and Ambition",
+    description: "Assess current AI use, maturity level and target state.",
+    type: "context",
+    fields: [
+      { key: "maturityLevel", label: "Current AI maturity", type: "select", required: true, options: ["Ad hoc", "Emerging", "Defined", "Managed", "Optimized"] },
+      { key: "currentUse", label: "Current AI use cases", type: "textarea", required: true, starter: "List active AI use cases, business owners, impacted processes, and model types used (LLM, ML, rules+AI)." },
+      { key: "riskDomains", label: "Top AI risk domains", type: "textarea", starter: "Describe highest risk areas such as bias/fairness, privacy, cybersecurity, explainability, third-party model dependency, hallucinations." },
+      { key: "aspiration", label: "AI aspiration / target operating model", type: "textarea", required: true, starter: "Explain the target AI operating model, governance posture, and expected business outcomes." },
+      { key: "targetDate", label: "Target timeframe", type: "text", required: true, starter: "Example: Q4 2027" }
+    ]
+  },
+  {
+    id: "governance",
+    title: "Clause 4-5: Context and Leadership",
+    description: "Governance model, policy commitments, and accountable leadership.",
+    type: "controls",
+    controls: [
+      { id: "c4_scope", clause: "Clause 4.3", weight: 5, control: "AIMS scope definition", prompt: "Is the AI management system scope clearly defined (entities, products, geographies, exclusions)?", bestPractice: "Scope is approved, version-controlled, and reviewed at least annually or at major change.", example: "A signed scope statement covering all customer-impacting AI use cases, with documented exclusions and rationale.", starter: "Describe your current scope statement and where it is documented." },
+      { id: "c5_policy", clause: "Clause 5.2", weight: 6, control: "AI policy framework", prompt: "Does the organisation maintain approved AI governance policies and standards?", bestPractice: "Policies are documented, approved, communicated, trained, and reviewed on a defined cycle.", example: "Policy pack includes AI acceptable use, model risk policy, data governance standard, and prohibited use catalog.", starter: "List current AI policy documents and last approval dates." },
+      { id: "c5_roles", clause: "Clause 5.3", weight: 6, control: "Roles and responsibilities", prompt: "Are AI accountabilities explicit across executive, risk, engineering and compliance functions?", bestPractice: "RACI is defined and linked to decision rights for high-risk AI.", example: "CRO approves risk tolerance; CIO owns technical controls; DPO signs off privacy impact for high-risk AI.", starter: "Describe who approves AI use cases, who operates controls, and who performs independent challenge." },
+      { id: "c5_oversight", clause: "Clause 5.1", weight: 5, control: "Leadership oversight", prompt: "Is there an active AI governance forum with regular review cadence and tracked actions?", bestPractice: "Formal governance cadence, agenda, minutes, and action tracking are maintained.", example: "Monthly AI governance council reviewing incidents, risk profile, new use cases, and compliance actions.", starter: "Summarize governance forum frequency, attendees, and decision logs." },
+      { id: "c5_objectives", clause: "Clause 6.2", weight: 4, control: "AI objectives and KPIs", prompt: "Are measurable AI objectives defined and monitored?", bestPractice: "Objectives include control effectiveness, risk reduction, compliance, and business value metrics.", example: "KPIs include model validation SLA, bias threshold adherence, incident closure times, and explainability coverage.", starter: "List AI control objectives and how they are measured." }
+    ]
+  },
+  {
+    id: "risk",
+    title: "Clause 6: Planning and Risk",
+    description: "Risk identification, treatment planning, and risk acceptance.",
+    type: "controls",
+    controls: [
+      { id: "c6_risk_method", clause: "Clause 6.1", weight: 7, control: "AI risk assessment methodology", prompt: "Is there a defined and repeatable method to assess AI risk across lifecycle stages?", bestPractice: "Method covers likelihood/impact, human impact, legal exposure, and model uncertainty.", example: "A standardized risk scoring rubric used during ideation, pre-deploy, and periodic review.", starter: "Describe your AI risk assessment methodology and where evidence is stored." },
+      { id: "c6_risk_register", clause: "Clause 6.1", weight: 6, control: "AI risk register", prompt: "Are AI risks catalogued with owners, treatment actions and deadlines?", bestPractice: "Register is current, linked to controls, and reviewed by governance forum.", example: "Central AI risk register with risk IDs, treatment plans, and residual risk acceptance records.", starter: "Summarize your AI risk register process and ownership." },
+      { id: "c6_change", clause: "Clause 6.3", weight: 5, control: "Change planning", prompt: "Are material AI changes assessed for control and risk impact before release?", bestPractice: "Change gates include technical, legal, and risk sign-off.", example: "Any model architecture or training-data change triggers revalidation and risk review before production.", starter: "Describe your change process and AI-specific approval criteria." },
+      { id: "c6_third_party", clause: "Clause 8.4", weight: 6, control: "Third-party AI dependency risk", prompt: "Are third-party model/service risks assessed and monitored?", bestPractice: "Supplier due diligence, contract clauses, and monitoring are documented.", example: "Vendor AI due diligence checklist with privacy, security and model transparency criteria.", starter: "Explain how you assess and monitor AI vendors and external APIs." },
+      { id: "c6_acceptance", clause: "Clause 6.1", weight: 5, control: "Risk acceptance", prompt: "Is residual AI risk acceptance formally documented and approved?", bestPractice: "Residual risk acceptance authority and thresholds are defined and auditable.", example: "High-risk use cases require CRO and legal sign-off with expiry date and re-review trigger.", starter: "Describe risk acceptance thresholds and approval authority." }
+    ]
+  },
+  {
+    id: "support",
+    title: "Clause 7: Support",
+    description: "Competence, awareness, communication, and documented information.",
+    type: "controls",
+    controls: [
+      { id: "c7_competence", clause: "Clause 7.2", weight: 4, control: "Competence and training", prompt: "Are role-based AI governance and risk training programs in place?", bestPractice: "Training is role-specific, mandatory where needed, and completion tracked.", example: "Engineers complete secure ML training; leaders complete AI accountability and legal risk modules.", starter: "Describe AI training by role and completion tracking." },
+      { id: "c7_awareness", clause: "Clause 7.3", weight: 3, control: "Awareness of obligations", prompt: "Do teams understand policy obligations and prohibited AI uses?", bestPractice: "Awareness is tested and reinforced through periodic campaigns.", example: "Quarterly attestations and micro-learning on restricted AI use and escalation channels.", starter: "Explain how staff are made aware of AI obligations." },
+      { id: "c7_docs", clause: "Clause 7.5", weight: 5, control: "Documented information control", prompt: "Are AI governance artifacts controlled for versioning, approval, and retention?", bestPractice: "Documentation lifecycle controls exist and evidence is readily auditable.", example: "Policy repository with owners, version history, review dates, and retention rules.", starter: "Describe where AI governance documentation is stored and controlled." },
+      { id: "c7_comms", clause: "Clause 7.4", weight: 3, control: "Internal and external communication", prompt: "Are AI incidents, obligations, and stakeholder communications managed systematically?", bestPractice: "Communication protocols define what, when, and to whom for key AI events.", example: "Incident communication matrix covering legal, privacy regulator, customer support, and executive escalation.", starter: "Summarize communication protocols for AI incidents and governance updates." }
+    ]
+  },
+  {
+    id: "operations",
+    title: "Clause 8: Operation",
+    description: "Operational controls over data, model lifecycle, human oversight, and incident handling.",
+    type: "controls",
+    controls: [
+      { id: "c8_data_quality", clause: "Clause 8.2", weight: 6, control: "Data quality and lineage", prompt: "Is AI training/inference data quality controlled and traceable?", bestPractice: "Data lineage, quality checks, and ownership are documented and monitored.", example: "Data contracts define source ownership, quality thresholds, and lineage provenance for all critical datasets.", starter: "Explain your data lineage and data quality controls for AI." },
+      { id: "c8_validation", clause: "Clause 8.3", weight: 7, control: "Model testing and validation", prompt: "Are models tested for performance, robustness, fairness and unintended outcomes?", bestPractice: "Validation includes functional and non-functional risk criteria before production.", example: "Validation suite includes stress testing, subgroup bias checks, adversarial tests and fallback tests.", starter: "Describe your model validation process and evidence artifacts." },
+      { id: "c8_human", clause: "Clause 8.5", weight: 6, control: "Human oversight", prompt: "Is human oversight defined for high-impact decisions and exceptions?", bestPractice: "Clear intervention points and override procedures exist.", example: "Human-in-the-loop approval required for high-impact customer decisions with audit trail and rationale.", starter: "Describe where human oversight is required and how overrides are logged." },
+      { id: "c8_incident", clause: "Clause 8.7", weight: 6, control: "AI incident management", prompt: "Do AI-specific incident detection, escalation and corrective action processes exist?", bestPractice: "Incidents are triaged and tracked through closure with root cause analysis.", example: "Dedicated AI incident playbook with severity levels, response SLAs, and post-incident review templates.", starter: "Outline your AI incident process and typical response timelines." },
+      { id: "c8_security", clause: "Clause 8.8", weight: 6, control: "AI security and access control", prompt: "Are model assets, prompts, pipelines and secrets secured with least privilege controls?", bestPractice: "Security controls cover model repositories, CI/CD, keys, and runtime monitoring.", example: "Role-based access, secret rotation, model artifact signing, and security monitoring are enforced.", starter: "Describe key AI security controls and monitoring in your environment." }
+    ]
+  },
+  {
+    id: "evaluation",
+    title: "Clause 9: Performance Evaluation",
+    description: "Monitoring, internal audit and management review for AIMS performance.",
+    type: "controls",
+    controls: [
+      { id: "c9_monitor", clause: "Clause 9.1", weight: 5, control: "Monitoring and measurement", prompt: "Are AI controls and model outcomes continuously monitored against defined thresholds?", bestPractice: "Monitoring metrics are defined, owned, and reviewed with action triggers.", example: "Dashboards track drift, false positives, SLA breaches, bias metrics, and control failures.", starter: "List monitoring metrics and thresholds used for AI controls and model outcomes." },
+      { id: "c9_audit", clause: "Clause 9.2", weight: 5, control: "Internal audit", prompt: "Is AI governance included in periodic internal audits?", bestPractice: "Audit program includes AIMS scope, control testing and remediation tracking.", example: "Internal audit annually tests design and operating effectiveness of high-risk AI controls.", starter: "Describe your internal audit coverage for AI governance and controls." },
+      { id: "c9_review", clause: "Clause 9.3", weight: 4, control: "Management review", prompt: "Does management review AIMS suitability and effectiveness with evidence?", bestPractice: "Regular reviews assess trends, incidents, compliance status and improvement actions.", example: "Quarterly management review pack includes risk heatmap, incidents, audit findings, and action statuses.", starter: "Summarize current management review cadence and key inputs." },
+      { id: "c9_reporting", clause: "Clause 9.1", weight: 4, control: "Reporting and transparency", prompt: "Are internal/external AI reports generated for key stakeholders?", bestPractice: "Reporting is tailored to executives, risk, regulators, and operations.", example: "Monthly board-level AI risk report and operational weekly control dashboard.", starter: "Explain what AI governance reports are produced and who receives them." }
+    ]
+  },
+  {
+    id: "improvement",
+    title: "Clause 10: Improvement",
+    description: "Nonconformity handling and continual improvement.",
+    type: "controls",
+    controls: [
+      { id: "c10_corrective", clause: "Clause 10.1", weight: 5, control: "Corrective actions", prompt: "Are nonconformities addressed with corrective actions and verification of effectiveness?", bestPractice: "Corrective actions include root cause analysis, action ownership, and closure checks.", example: "CAPA workflow for AI control failures with evidence of implemented remediation and re-testing.", starter: "Describe corrective action workflow for AI governance/control issues." },
+      { id: "c10_lessons", clause: "Clause 10.2", weight: 4, control: "Lessons learned", prompt: "Are incidents and near-misses used to improve policy, controls and training?", bestPractice: "Lessons learned are documented and integrated into control updates.", example: "Post-incident retrospectives feed updates to risk taxonomy, playbooks, and training content.", starter: "Provide examples of AI incidents or near-misses that drove improvements." },
+      { id: "c10_continuous", clause: "Clause 10.2", weight: 4, control: "Continuous improvement program", prompt: "Is there a structured AI governance improvement roadmap linked to strategic goals?", bestPractice: "Improvement priorities are risk-driven, resourced, and tracked.", example: "12-month AI control maturity program with milestones, budget owner, and target outcomes.", starter: "Describe current AI governance improvement initiatives and milestones." }
+    ]
+  },
+  { id: "final", title: "Final Outputs", description: "Dashboard, detailed report, and compliance-readiness roadmap.", type: "final" }
+];
+
+const app = document.getElementById("app");
+
+let state = {
+  profile: load(STORAGE.profile, null),
+  settings: load(STORAGE.settings, {
+    aiMode: false,
+    aiProvider: "openai",
+    openaiKey: "",
+    anthropicKey: "",
+    geminiKey: "",
+    azureApiKey: "",
+    azureEndpoint: "",
+    azureDeployment: "",
+    azureApiVersion: "2024-10-21",
+    aiDisclaimerAcknowledged: false,
+    aiDiagnostics: [],
+    settingsOpen: false,
+    assessmentMode: "simple",
+    aiCredentialStorage: "session"
+  }),
+  assessments: load(STORAGE.assessments, []),
+  currentAssessmentId: null,
+  view: "assessment",
+  ui: { uploadOpen: {}, summaryOpen: {} }
+};
+
+let dictationState = {
+  recognition: null,
+  activeTargetId: null
+};
+
+function load(key, fallback) {
+  try {
+    const v = localStorage.getItem(key);
+    return v ? JSON.parse(v) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function storageSettingsSnapshot() {
+  const snapshot = { ...(state.settings || {}) };
+  const mode = snapshot.aiCredentialStorage === "persistent" ? "persistent" : "session";
+  snapshot.aiCredentialStorage = mode;
+  if (mode !== "persistent") {
+    snapshot.openaiKey = "";
+    snapshot.anthropicKey = "";
+    snapshot.geminiKey = "";
+    snapshot.azureApiKey = "";
+    snapshot.azureEndpoint = "";
+    snapshot.azureDeployment = "";
+    snapshot.azureApiVersion = snapshot.azureApiVersion || "2024-10-21";
+  }
+  return snapshot;
+}
+
+function saveProfile() { localStorage.setItem(STORAGE.profile, JSON.stringify(state.profile)); }
+function saveSettings() { localStorage.setItem(STORAGE.settings, JSON.stringify(storageSettingsSnapshot())); }
+function assessmentMode() { return state.settings?.assessmentMode === "advanced" ? "advanced" : "simple"; }
+function aiFeaturesEnabled() { return assessmentMode() === "advanced" && !!state.settings?.aiMode; }
+function saveAssessments() { localStorage.setItem(STORAGE.assessments, JSON.stringify(state.assessments)); }
+const pendingAssessmentSaves = new Map();
+function scheduleAssessmentSave(assessment, delayMs = 400) {
+  if (!assessment || !assessment.id) return;
+  const existing = pendingAssessmentSaves.get(assessment.id);
+  if (existing) clearTimeout(existing);
+  const timer = setTimeout(() => {
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+    pendingAssessmentSaves.delete(assessment.id);
+  }, delayMs);
+  pendingAssessmentSaves.set(assessment.id, timer);
+}
+function flushAssessmentSave(assessment) {
+  if (!assessment || !assessment.id) return;
+  const existing = pendingAssessmentSaves.get(assessment.id);
+  if (existing) {
+    clearTimeout(existing);
+    pendingAssessmentSaves.delete(assessment.id);
+  }
+  assessment.updatedAt = nowIso();
+  saveAssessments();
+}
+function ensureSettingsDefaults() {
+  const s = state.settings || {};
+  const storageMode = s.aiCredentialStorage === "persistent" ? "persistent" : "session";
+  const selectedMode = s.assessmentMode === "advanced" ? "advanced" : "simple";
+  const aiEnabled = selectedMode === "advanced" ? !!s.aiMode : false;
+  state.settings = {
+    aiMode: aiEnabled,
+    aiProvider: s.aiProvider || "openai",
+    openaiKey: storageMode === "persistent" ? (s.openaiKey || "") : "",
+    anthropicKey: storageMode === "persistent" ? (s.anthropicKey || "") : "",
+    geminiKey: storageMode === "persistent" ? (s.geminiKey || "") : "",
+    azureApiKey: storageMode === "persistent" ? (s.azureApiKey || "") : "",
+    azureEndpoint: storageMode === "persistent" ? (s.azureEndpoint || "") : "",
+    azureDeployment: storageMode === "persistent" ? (s.azureDeployment || "") : "",
+    azureApiVersion: storageMode === "persistent" ? (s.azureApiVersion || "2024-10-21") : "2024-10-21",
+    aiDisclaimerAcknowledged: !!s.aiDisclaimerAcknowledged,
+    aiDiagnostics: Array.isArray(s.aiDiagnostics) ? s.aiDiagnostics : [],
+    settingsOpen: selectedMode === "advanced" ? !!s.settingsOpen : false,
+    assessmentMode: selectedMode,
+    aiCredentialStorage: storageMode
+  };
+}
+ensureSettingsDefaults();
+
+function activeAiProvider() {
+  const p = `${state.settings?.aiProvider || "openai"}`.toLowerCase();
+  return ["openai", "anthropic", "gemini", "azure_openai"].includes(p) ? p : "openai";
+}
+function providerLabel(provider = activeAiProvider()) {
+  if (provider === "anthropic") return "Anthropic Claude";
+  if (provider === "gemini") return "Google Gemini";
+  if (provider === "azure_openai") return "Azure OpenAI";
+  return "OpenAI";
+}
+function providerSetupLink(provider = activeAiProvider()) {
+  if (provider === "anthropic") return ANTHROPIC_SETUP_URL;
+  if (provider === "gemini") return GEMINI_SETUP_URL;
+  if (provider === "azure_openai") return AZURE_OPENAI_SETUP_URL;
+  return OPENAI_SETUP_URL;
+}
+function aiProviderReady() {
+  const p = activeAiProvider();
+  if (p === "anthropic") return !!state.settings.anthropicKey;
+  if (p === "gemini") return !!state.settings.geminiKey;
+  if (p === "azure_openai") return !!(state.settings.azureApiKey && state.settings.azureEndpoint && state.settings.azureDeployment);
+  return !!state.settings.openaiKey;
+}
+
+function sanitizeDiagnosticValue(value, depth = 0) {
+  if (depth > 3) return "[TRUNCATED]";
+  if (value == null) return value;
+  if (typeof value === "string") {
+    const v = value.length > 400 ? `${value.slice(0, 400)}...` : value;
+    return v
+      .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]")
+      .replace(/sk-[A-Za-z0-9_-]+/g, "sk-[REDACTED]")
+      .replace(/sk-ant-[A-Za-z0-9_-]+/g, "sk-ant-[REDACTED]")
+      .replace(/AIza[0-9A-Za-z_-]+/g, "AIza[REDACTED]");
+  }
+  if (Array.isArray(value)) return value.slice(0, 20).map((v) => sanitizeDiagnosticValue(v, depth + 1));
+  if (typeof value === "object") {
+    const out = {};
+    Object.entries(value).forEach(([k, v]) => {
+      if (/key|token|authorization|api[-_]?key|secret/i.test(k)) out[k] = "[REDACTED]";
+      else out[k] = sanitizeDiagnosticValue(v, depth + 1);
+    });
+    return out;
+  }
+  return value;
+}
+
+function addAiDiagnostic(event) {
+  const item = {
+    id: uid("diag"),
+    at: nowIso(),
+    provider: providerLabel(event.provider || activeAiProvider()),
+    status: event.status || "INFO",
+    stage: event.stage || "GENERAL",
+    action: event.action || "",
+    message: event.message || "",
+    details: sanitizeDiagnosticValue(event.details || {})
+  };
+  if (!Array.isArray(state.settings.aiDiagnostics)) state.settings.aiDiagnostics = [];
+  state.settings.aiDiagnostics.push(item);
+  if (state.settings.aiDiagnostics.length > 80) state.settings.aiDiagnostics = state.settings.aiDiagnostics.slice(-80);
+  saveSettings();
+}
+
+function clearAiDiagnostics() {
+  state.settings.aiDiagnostics = [];
+  saveSettings();
+}
+
+function providerPreflightValidation(provider = activeAiProvider()) {
+  const errors = [];
+  const warnings = [];
+  if (window.location.protocol === "file:") {
+    warnings.push("App is running from file://. Some providers may reject browser requests from null origin. Prefer http://localhost.");
+  }
+  if (provider === "openai") {
+    const key = `${state.settings.openaiKey || ""}`.trim();
+    if (!key) errors.push("OpenAI API key is required.");
+    else if (!/^sk-/.test(key)) warnings.push("OpenAI key format looks unusual (expected prefix sk-).");
+  } else if (provider === "anthropic") {
+    const key = `${state.settings.anthropicKey || ""}`.trim();
+    if (!key) errors.push("Anthropic API key is required.");
+    else if (!/^sk-ant-/.test(key)) warnings.push("Anthropic key format looks unusual (expected prefix sk-ant-).");
+  } else if (provider === "gemini") {
+    const key = `${state.settings.geminiKey || ""}`.trim();
+    if (!key) errors.push("Gemini API key is required.");
+    else if (!/^AIza/.test(key)) warnings.push("Gemini key format looks unusual (expected prefix AIza).");
+  } else if (provider === "azure_openai") {
+    const key = `${state.settings.azureApiKey || ""}`.trim();
+    const endpoint = `${state.settings.azureEndpoint || ""}`.trim();
+    const deployment = `${state.settings.azureDeployment || ""}`.trim();
+    const apiVersion = `${state.settings.azureApiVersion || ""}`.trim();
+    if (!key) errors.push("Azure OpenAI API key is required.");
+    if (!endpoint) errors.push("Azure endpoint is required.");
+    if (!deployment) errors.push("Azure deployment name is required.");
+    if (endpoint && !/^https:\/\/.+/i.test(endpoint)) errors.push("Azure endpoint must start with https://");
+    if (endpoint && !/\.openai\.azure\.com/i.test(endpoint)) warnings.push("Azure endpoint does not look like an Azure OpenAI resource domain.");
+    if (deployment && /\s/.test(deployment)) warnings.push("Azure deployment name contains spaces; deployment names are typically space-free.");
+    if (apiVersion && !/^\d{4}-\d{2}-\d{2}(-preview)?$/.test(apiVersion)) warnings.push("Azure API version format may be invalid (expected YYYY-MM-DD or YYYY-MM-DD-preview).");
+  }
+  return { errors, warnings };
+}
+
+function formatProviderError(provider, rawMessage) {
+  const msg = `${rawMessage || ""}`.trim();
+  const lower = msg.toLowerCase();
+  const p = providerLabel(provider);
+  if (!msg) return `${p}: Unknown provider error.`;
+
+  if (lower.includes("failed to fetch") || lower.includes("networkerror")) {
+    return `${p}: Network/CORS failure. If running from file://, serve app on http://localhost and verify firewall/VPN/proxy settings.`;
+  }
+  if (/\b(401|403)\b/.test(lower) || lower.includes("unauthorized") || lower.includes("forbidden")) {
+    return `${p}: Authentication/permission failure. Verify API key, project permissions, and provider key restrictions.`;
+  }
+  if (/\b(404)\b/.test(lower) && provider === "azure_openai") {
+    return `${p}: Resource not found. Check Azure endpoint and deployment name (deployment, not model name).`;
+  }
+  if (/\b(400)\b/.test(lower) && provider === "azure_openai") {
+    return `${p}: Bad request. Validate Azure API version and deployment compatibility.`;
+  }
+  if (/\b(429)\b/.test(lower) || lower.includes("rate limit") || lower.includes("quota")) {
+    return `${p}: Rate limit or quota exceeded. Retry later or check plan/quota limits.`;
+  }
+  if (provider === "gemini" && lower.includes("api key")) {
+    return `${p}: API key rejected. Check key validity and API restrictions for browser/localhost usage.`;
+  }
+  return `${p}: ${msg}`;
+}
+
+function aiDisabledReason() {
+  if (assessmentMode() !== "advanced") return "AI features are disabled in Simple mode.";
+  if (!state.settings.aiMode) return "AI mode is disabled. Enable AI mode from the welcome screen.";
+  if (!aiProviderReady()) return "AI provider credentials/settings are incomplete.";
+  return "";
+}
+
+function normalizeEvidenceUrl(url) {
+  const raw = `${url || ""}`.trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function renderEvidenceLinkItem(url) {
+  const safe = normalizeEvidenceUrl(url);
+  if (!safe) return `<li><span class="tag no">Invalid URL</span> ${escapeHtml(url || "")}</li>`;
+  return `<li><a href="${escapeHtml(safe)}" target="_blank" rel="noopener noreferrer">${escapeHtml(safe)}</a></li>`;
+}
+
+function nowIso() { return new Date().toISOString(); }
+function uid(prefix = "id") { return `${prefix}_${Math.random().toString(36).slice(2, 10)}_${Date.now().toString(36)}`; }
+function goHome() {
+  const active = currentAssessment();
+  if (active) flushAssessmentSave(active);
+  stopDictation();
+  state.currentAssessmentId = null;
+  state.view = "assessment";
+  render();
+}
+
+function toast(message) {
+  const old = document.querySelector(".toast");
+  if (old) old.remove();
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
+}
+
+function dictationSupported() {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+
+function stopDictation() {
+  if (dictationState.recognition) {
+    try { dictationState.recognition.stop(); } catch {}
+  }
+  dictationState.recognition = null;
+  dictationState.activeTargetId = null;
+}
+
+function startDictation(textareaId, button) {
+  const setDictationButtonState = (recording) => {
+    const icon = button.querySelector(".mic-icon");
+    const label = button.querySelector(".mic-label");
+    if (icon) icon.textContent = recording ? "⏹" : "🎤";
+    if (label) label.textContent = recording ? "dictate (stop)" : "dictate";
+    button.classList.toggle("recording", recording);
+  };
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    toast("Speech dictation is not supported in this browser.");
+    return;
+  }
+
+  if (dictationState.activeTargetId === textareaId) {
+    stopDictation();
+    setDictationButtonState(false);
+    return;
+  }
+
+  stopDictation();
+
+  const textarea = document.getElementById(textareaId);
+  if (!textarea) return;
+
+  const recognition = new SpeechRecognition();
+  recognition.lang = "en-US";
+  recognition.interimResults = true;
+  recognition.continuous = true;
+
+  let finalText = "";
+  let baseText = textarea.value ? `${textarea.value}${textarea.value.endsWith(" ") ? "" : " "}` : "";
+
+  recognition.onresult = (event) => {
+    let interim = "";
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) finalText += `${transcript} `;
+      else interim += transcript;
+    }
+    textarea.value = `${baseText}${finalText}${interim}`.trim();
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  recognition.onerror = () => {
+    stopDictation();
+    setDictationButtonState(false);
+    toast("Dictation stopped due to an error.");
+  };
+
+  recognition.onend = () => {
+    if (dictationState.activeTargetId === textareaId) {
+      stopDictation();
+      setDictationButtonState(false);
+    }
+  };
+
+  recognition.start();
+  dictationState.recognition = recognition;
+  dictationState.activeTargetId = textareaId;
+  setDictationButtonState(true);
+}
+
+function attachDictationButtons(root, selector) {
+  if (!dictationSupported()) return;
+  root.querySelectorAll(selector).forEach((textarea, index) => {
+    if (textarea.dataset.micBound === "1") return;
+    const id = textarea.id || `dictation_${uid("txt")}_${index}`;
+    textarea.id = id;
+    textarea.dataset.micBound = "1";
+
+    const wrap = document.createElement("div");
+    wrap.className = "mic-row";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn ghost small mic-btn";
+    button.innerHTML = "<span class=\"mic-icon\" aria-hidden=\"true\">🎤</span><span class=\"mic-label\">dictate</span>";
+    button.title = "Dictate into this response box";
+    button.addEventListener("click", () => startDictation(id, button));
+    wrap.appendChild(button);
+
+    textarea.insertAdjacentElement("afterend", wrap);
+  });
+}
+
+function escapeHtml(str) {
+  return `${str || ""}`
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function currentAssessment() {
+  const found = state.assessments.find((a) => a.id === state.currentAssessmentId) || null;
+  if (found) ensureAssessmentData(found);
+  return found;
+}
+
+function defaultAssessmentData() {
+  return {
+    currentSection: 0,
+    context: {},
+    ratings: {},
+    evidence: {},
+    delegates: {},
+    delegationEvents: [],
+    aiInsights: {},
+    sectionInsights: {},
+    preferredApproach: "fastest",
+    roadmapScenario: "standard"
+  };
+}
+
+function ensureAssessmentData(assessment) {
+  if (!assessment.data) assessment.data = defaultAssessmentData();
+  if (!assessment.data.evidence) assessment.data.evidence = {};
+  if (!assessment.data.delegates) assessment.data.delegates = {};
+  if (!assessment.data.delegationEvents) assessment.data.delegationEvents = [];
+  if (!assessment.data.aiInsights) assessment.data.aiInsights = {};
+  if (!assessment.data.sectionInsights) assessment.data.sectionInsights = {};
+  if (!assessment.data.preferredApproach) assessment.data.preferredApproach = "fastest";
+  if (!assessment.data.roadmapScenario) assessment.data.roadmapScenario = "standard";
+  if (typeof assessment.data.currentSection !== "number") assessment.data.currentSection = 0;
+}
+
+function logDelegationEvent(assessment, delegationId, eventType, details = {}, controlId = "") {
+  ensureAssessmentData(assessment);
+  assessment.data.delegationEvents.push({
+    id: uid("evt"),
+    delegationId,
+    eventType,
+    controlId: controlId || "",
+    actor: state.profile?.email || "local-user",
+    details,
+    createdAt: nowIso()
+  });
+}
+
+function allDelegationBatches(assessment) {
+  ensureAssessmentData(assessment);
+  const grouped = {};
+  Object.entries(assessment.data.delegates || {}).forEach(([controlId, arr]) => {
+    (arr || []).forEach((d) => {
+      const key = d.delegationId || `${d.email}-${d.delegatedAt || ""}`;
+      if (!grouped[key]) {
+        grouped[key] = {
+          delegationId: key,
+          name: d.name || "",
+          title: d.title || "",
+          email: d.email || "",
+          role: d.role || "CONTRIBUTOR",
+          intro: d.intro || "",
+          delegatedAt: d.delegatedAt || "",
+          status: d.status || "SENT",
+          controls: []
+        };
+      }
+      const ctl = getControl(controlId);
+      if (ctl && !grouped[key].controls.find((x) => x.id === ctl.id)) grouped[key].controls.push(ctl);
+      if (d.status === "CLOSED" || (d.status === "RESPONDED" && grouped[key].status === "SENT")) grouped[key].status = d.status;
+    });
+  });
+  return Object.values(grouped).sort((a, b) => `${b.delegatedAt || ""}`.localeCompare(`${a.delegatedAt || ""}`));
+}
+
+function ensureEvidence(assessment, controlId) {
+  if (!assessment.data.evidence[controlId]) assessment.data.evidence[controlId] = { notes: "", links: [], files: [] };
+  return assessment.data.evidence[controlId];
+}
+
+function ensureAiInsight(assessment, controlId) {
+  if (!assessment.data.aiInsights[controlId]) assessment.data.aiInsights[controlId] = { interpret: "", interpretStructured: null, example: "", updatedAt: "" };
+  return assessment.data.aiInsights[controlId];
+}
+
+function allControls() { return sections.filter((s) => s.type === "controls").flatMap((s) => s.controls); }
+function getControl(controlId) { return allControls().find((c) => c.id === controlId); }
+const ISO42001_REQUIREMENTS = {
+  "4.1": {
+    title: "Understanding the organization and its context",
+    summary: "Define the internal and external factors that affect AI governance outcomes, including strategy, risk appetite, legal context, and operational constraints relevant to AI systems."
+  },
+  "4.2": {
+    title: "Interested parties and their expectations",
+    summary: "Identify stakeholders affected by AI systems and determine their relevant requirements, including regulators, customers, employees, partners, and oversight functions."
+  },
+  "4.3": {
+    title: "Determining the scope of the AIMS",
+    summary: "Set clear boundaries for the AI management system, including in-scope entities, use cases, products, geographies, and justified exclusions to support auditable governance."
+  },
+  "4.4": {
+    title: "AI management system",
+    summary: "Establish, implement, maintain, and continually improve an AI management system with defined processes, accountability, and evidence that controls are operating as designed."
+  },
+  "5.1": {
+    title: "Leadership and commitment",
+    summary: "Leadership should actively direct and support the AIMS, ensure resources and governance oversight, and drive accountability for AI risks, controls, and outcomes."
+  },
+  "5.2": {
+    title: "AI policy",
+    summary: "Maintain an approved AI policy that sets commitments, principles, and control expectations, and ensure it is communicated, understood, and periodically reviewed."
+  },
+  "5.3": {
+    title: "Roles, responsibilities and authorities",
+    summary: "Define and communicate role-based AI governance accountabilities and decision rights so ownership of controls, risk acceptance, and compliance obligations is unambiguous."
+  },
+  "6.1": {
+    title: "Actions to address risks and opportunities",
+    summary: "Use a consistent method to identify, assess, prioritize, and treat AI risks and opportunities across the lifecycle, including residual risk acceptance and monitoring."
+  },
+  "6.2": {
+    title: "AI objectives and planning",
+    summary: "Set measurable AI governance and risk objectives with owners, timelines, and performance indicators, and plan actions needed to achieve and evidence those objectives."
+  },
+  "6.3": {
+    title: "Planning of changes",
+    summary: "Control material changes affecting AI systems and governance by evaluating risk/control impacts before implementation and ensuring approvals and revalidation where required."
+  },
+  "7.2": {
+    title: "Competence",
+    summary: "Ensure personnel performing AI governance and operational roles are competent through role-specific training, experience, and records that evidence maintained capability."
+  },
+  "7.3": {
+    title: "Awareness",
+    summary: "Ensure relevant personnel understand AI policy obligations, prohibited practices, escalation channels, and the consequences of nonconformity in AI operations."
+  },
+  "7.4": {
+    title: "Communication",
+    summary: "Define what AI governance information is communicated, to whom, by whom, and when, including internal escalation and external stakeholder or regulatory communication."
+  },
+  "7.5": {
+    title: "Documented information",
+    summary: "Control AI governance documentation and records with versioning, approvals, retention, and accessibility so control design and operating evidence remains audit-ready."
+  },
+  "8.1": {
+    title: "Operational planning and control",
+    summary: "Operate AI systems under planned controls, criteria, and responsibilities to ensure governance requirements are implemented consistently in day-to-day execution."
+  },
+  "8.2": {
+    title: "Operational AI controls",
+    summary: "Apply operational controls over data, model development, deployment, and monitoring to manage quality, safety, fairness, and compliance risks in AI systems."
+  },
+  "8.3": {
+    title: "AI risk and impact controls in operation",
+    summary: "Ensure operational processes include impact and risk checks for AI systems before and during use, with evidence of review, acceptance thresholds, and mitigations."
+  },
+  "8.4": {
+    title: "Externally provided processes, products and services",
+    summary: "Manage third-party AI dependencies through due diligence, contractual safeguards, performance monitoring, and risk controls aligned to the organization’s AIMS."
+  },
+  "8.5": {
+    title: "Human oversight",
+    summary: "Define and evidence effective human oversight for relevant AI decisions, including intervention points, override conditions, accountability, and audit trails."
+  },
+  "8.7": {
+    title: "Incident handling in operation",
+    summary: "Detect, triage, and respond to AI incidents with clear escalation, corrective actions, and closure evidence to reduce recurrence and maintain governance effectiveness."
+  },
+  "8.8": {
+    title: "Security and access control for AI assets",
+    summary: "Protect AI models, data, prompts, pipelines, and secrets with access controls, monitoring, and secure lifecycle practices proportionate to risk."
+  },
+  "9.1": {
+    title: "Monitoring, measurement, analysis and evaluation",
+    summary: "Monitor AI control effectiveness and outcomes against defined thresholds, analyze trends, and trigger action where performance, risk, or compliance indicators degrade."
+  },
+  "9.2": {
+    title: "Internal audit",
+    summary: "Audit the AIMS at planned intervals to verify control design and operation, identify nonconformities, and track remediation to closure."
+  },
+  "9.3": {
+    title: "Management review",
+    summary: "Management should periodically review AIMS suitability and effectiveness using evidence on incidents, audit findings, performance metrics, and improvement actions."
+  },
+  "10.1": {
+    title: "Continual improvement",
+    summary: "Continually improve the AIMS using findings, performance data, and lessons learned so AI governance maturity and control effectiveness increase over time."
+  },
+  "10.2": {
+    title: "Nonconformity and corrective action",
+    summary: "Address nonconformities with root-cause-based corrective action, verify effectiveness, and retain evidence that issues are resolved and sustained."
+  }
+};
+
+function iso42001ReferenceNumbersForControl(control) {
+  const prefix = `${control?.id || ""}`.split("_")[0];
+  const byPrefix = {
+    c4: ["4.1", "4.2", "4.3", "4.4"],
+    c5: ["5.1", "5.2", "5.3"],
+    c6: ["6.1", "6.2", "6.3"],
+    c7: ["7.2", "7.3", "7.4", "7.5"],
+    c8: ["8.1", "8.2", "8.3", "8.4", "8.5", "8.7", "8.8"],
+    c9: ["9.1", "9.2", "9.3"],
+    c10: ["10.1", "10.2"]
+  };
+  const fromClause = `${control?.clause || ""}`.match(/Clause\s+(\d+(?:\.\d+)?)/i)?.[1] || "";
+  const refs = Array.from(new Set([fromClause].concat(byPrefix[prefix] || []))).filter(Boolean);
+  return refs.filter((n) => !!ISO42001_REQUIREMENTS[n]).slice(0, 5);
+}
+
+function renderIso42001References(control) {
+  const numbers = iso42001ReferenceNumbersForControl(control);
+  return `<details class="evidence"><summary><strong>References (${numbers.length})</strong></summary>
+    ${numbers.map((n) => {
+      const ref = ISO42001_REQUIREMENTS[n];
+      return `<details><summary><strong>Clause ${escapeHtml(n)} - ${escapeHtml(ref.title)}</strong></summary><p class="hint">${escapeHtml(ref.summary)}</p></details>`;
+    }).join("")}
+  </details>`;
+}
+
+function isContextFieldComplete(context, field) {
+  if (field.type === "geo_reg_scope") {
+    return !!(`${context.country || ""}`.trim() && `${context.industrySector || inferSectorFromIndustryText(context.industry || "")}`.trim());
+  }
+  return `${context[field.key] || ""}`.trim().length > 0;
+}
+
+function completionPercent(assessment) {
+  const controls = allControls();
+  const answered = controls.filter((c) => Number(assessment.data.ratings[c.id] || 0) > 0).length;
+  const requiredContextFields = sections
+    .filter((s) => s.type === "context")
+    .flatMap((s) => s.fields.filter((f) => f.required));
+  const contextDone = requiredContextFields.filter((f) => isContextFieldComplete(assessment.data.context, f)).length;
+  const total = controls.length + requiredContextFields.length;
+  return total ? Math.round(((answered + contextDone) / total) * 100) : 0;
+}
+
+function weightedScorePercent(assessment) {
+  const controls = allControls();
+  const weightedMax = controls.reduce((sum, c) => sum + c.weight, 0);
+  const weighted = controls.reduce((sum, c) => {
+    const score = Number(assessment.data.ratings[c.id] || 0);
+    return sum + (score / 5) * c.weight;
+  }, 0);
+  return weightedMax ? Math.round((weighted / weightedMax) * 100) : 0;
+}
+
+function sectionPercent(assessment, section) {
+  if (section.type === "context") {
+    const required = section.fields.filter((f) => f.required);
+    const done = required.filter((f) => isContextFieldComplete(assessment.data.context, f)).length;
+    return required.length ? Math.round((done / required.length) * 100) : 100;
+  }
+  if (section.type === "controls") {
+    const ids = section.controls.map((c) => c.id);
+    const done = ids.filter((id) => Number(assessment.data.ratings[id] || 0) > 0).length;
+    return Math.round((done / ids.length) * 100);
+  }
+  return assessment.data.currentSection >= sections.length - 1 ? 100 : 0;
+}
+
+function ratingFeedback(score) {
+  const n = Number(score || 0);
+  if (n >= 5) return { cls: "good", text: "Excellent alignment to ISO 42001 expectations." };
+  if (n >= 4) return { cls: "good", text: "Strong alignment with minor remediation required." };
+  if (n >= 3) return { cls: "med", text: "Partially aligned. Improvement needed before readiness." };
+  if (n >= 1) return { cls: "bad", text: "Low alignment. Major control uplift required." };
+  return { cls: "", text: "Rate this control from 1-5 stars." };
+}
+
+function evidenceQualityMetrics(ev) {
+  const notes = `${ev?.notes || ""}`.trim();
+  const links = (ev?.links || []).length;
+  const files = (ev?.files || []).length;
+  const hasOwner = /\b(owner|accountable|responsible|approver)\b/i.test(notes);
+  const hasWhen = /\b(weekly|monthly|quarterly|annually|daily|date|as of|since|timeline)\b/i.test(notes);
+  const hasArtifacts = /\b(policy|procedure|register|report|ticket|log|dashboard|training|approval|audit)\b/i.test(notes);
+
+  const specificity = Math.min(5, (notes.length > 600 ? 3 : notes.length > 250 ? 2 : notes.length > 80 ? 1 : 0) + (hasOwner ? 1 : 0) + (hasWhen ? 1 : 0));
+  const traceability = Math.min(5, (links + files >= 4 ? 3 : links + files >= 2 ? 2 : links + files >= 1 ? 1 : 0) + (hasArtifacts ? 2 : 0));
+  const operability = Math.min(5, (hasOwner ? 2 : 0) + (hasWhen ? 2 : 0) + (hasArtifacts ? 1 : 0));
+  const overall5 = Number(((specificity + traceability + operability) / 3).toFixed(1));
+  const overall100 = Math.round((overall5 / 5) * 100);
+  const recommendations = [];
+  if (!hasOwner) recommendations.push("Add accountable owner and approval authority.");
+  if (!hasWhen) recommendations.push("State control frequency and latest execution/review date.");
+  if (links + files === 0) recommendations.push("Attach objective evidence (documents, logs, or dashboards).");
+  if (!hasArtifacts) recommendations.push("Reference named artifacts (policy, register, reports, tickets).");
+  return { specificity, traceability, operability, overall5, overall100, recommendations };
+}
+
+function complianceStatus(score) {
+  return Number(score || 0) >= 4 ? "Compliant" : "Non-compliant";
+}
+
+function statusToneFromScore(score) {
+  const n = Number(score || 0);
+  if (n >= 4) return "ok";
+  if (n >= 2.5) return "warn";
+  return "no";
+}
+
+function maskSensitiveText(text, sensitiveTerms = []) {
+  let out = `${text || ""}`;
+  out = out.replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[EMAIL]");
+  out = out.replace(/\b(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{2,4}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/g, "[PHONE]");
+  out = out.replace(/\b(?:\d[ -]*?){13,19}\b/g, "[ACCOUNT_OR_CARD]");
+  out = out.replace(/\b\d{3}-\d{2}-\d{4}\b/g, "[NATIONAL_ID]");
+  out = out.replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, "[IP]");
+  out = out.replace(/https?:\/\/[^\s]+/g, "[URL]");
+  for (const term of sensitiveTerms) {
+    const t = `${term || ""}`.trim();
+    if (t.length < 3) continue;
+    out = out.replace(new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), "[REDACTED]");
+  }
+  return out;
+}
+
+function inferSectorFromIndustryText(industryText) {
+  const txt = `${industryText || ""}`.toLowerCase();
+  const rules = [
+    { match: ["bank", "insurance", "fintech", "investment"], sector: "K: Financial and insurance activities" },
+    { match: ["health", "hospital", "pharma", "medical"], sector: "Q: Human health and social work activities" },
+    { match: ["government", "public sector", "defence"], sector: "O: Public administration and defence; compulsory social security" },
+    { match: ["software", "technology", "telecom", "media", "data"], sector: "J: Information and communication" },
+    { match: ["retail", "commerce", "consumer"], sector: "G: Wholesale and retail trade; repair of motor vehicles and motorcycles" },
+    { match: ["manufactur", "industrial", "factory"], sector: "C: Manufacturing" },
+    { match: ["education", "university", "school"], sector: "P: Education" },
+    { match: ["transport", "logistics", "shipping"], sector: "H: Transportation and storage" },
+    { match: ["energy", "utility", "power"], sector: "D: Electricity, gas, steam and air conditioning supply" }
+  ];
+  for (const rule of rules) {
+    if (rule.match.some((m) => txt.includes(m))) return rule.sector;
+  }
+  return "";
+}
+
+function baseFrameworksForContext(context) {
+  const country = context.country || "";
+  const sector = context.industrySector || "";
+  const frameworks = ["ISO/IEC 42001", "ISO/IEC 23894 (AI risk management)"];
+  if (country === "United States") frameworks.push("NIST AI RMF 1.0", "FTC AI and automated decision guidance");
+  if (country === "United Kingdom") frameworks.push("UK GDPR", "ICO AI auditing framework", "UK AI regulation principles");
+  if (["France", "Germany", "Ireland", "Netherlands", "Spain", "Sweden", "European Union"].includes(country)) frameworks.push("EU AI Act", "GDPR");
+  if (country === "Canada") frameworks.push("PIPEDA", "Voluntary Code of Conduct on Generative AI");
+  if (country === "Australia") frameworks.push("Australian Privacy Act", "Australia AI Ethics Principles");
+  if (country === "Singapore") frameworks.push("Singapore Model AI Governance Framework", "PDPA (Singapore)");
+  if (sector.startsWith("K:")) frameworks.push("Basel model risk management practices", "Financial conduct and prudential AI governance expectations");
+  if (sector.startsWith("Q:")) frameworks.push("Health data privacy and clinical safety governance requirements");
+  if (sector.startsWith("O:")) frameworks.push("Public sector automated decision transparency requirements");
+  return Array.from(new Set(frameworks));
+}
+
+function getApplicableFrameworks(context) {
+  if (Array.isArray(context.applicableFrameworks) && context.applicableFrameworks.length) return context.applicableFrameworks;
+  if (context.applicableFrameworksManual) {
+    return `${context.applicableFrameworksManual}`.split(/\n|,/).map((x) => x.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+async function generateFrameworksWithAi(context) {
+  if (!aiFeaturesEnabled() || !aiProviderReady()) throw new Error("AI is available in Advanced mode with provider credentials configured.");
+  const seed = baseFrameworksForContext(context);
+  const output = await aiComplete(
+    "You generate concise legal/regulatory framework lists for ISO 42001 context.",
+    [
+      "Generate a concise list of legal/regulatory/standards frameworks relevant to ISO 42001 readiness.",
+      `Country: ${context.country || "Unknown"}`,
+      `State/Province: ${context.stateProvince || "N/A"}`,
+      `Industry text: ${context.industry || "Unknown"}`,
+      `Industry sector: ${context.industrySector || "Unknown"}`,
+      `Seed list: ${seed.join("; ")}`,
+      "Return 8-14 short framework names, one per line, no numbering."
+    ].join("\n")
+  );
+  const lines = output.split("\n").map((x) => x.replace(/^[\-\d.\)\s]+/, "").trim()).filter(Boolean);
+  const merged = Array.from(new Set(seed.concat(lines))).slice(0, 18);
+  return merged;
+}
+
+function personalizedControlHint(assessment, control) {
+  const c = assessment.data.context || {};
+  const region = [c.country, c.stateProvince].filter(Boolean).join(", ");
+  const sector = c.industrySector || inferSectorFromIndustryText(c.industry || "");
+  const frameworks = getApplicableFrameworks(c).slice(0, 3).join(", ");
+  const parts = [];
+  if (region) parts.push(`geography: ${region}`);
+  if (sector) parts.push(`sector: ${sector}`);
+  if (frameworks) parts.push(`framework focus: ${frameworks}`);
+  if (!parts.length) return "";
+  return `Context guidance (${control.clause}): prioritize evidence aligned to ${parts.join(" | ")}.`;
+}
+
+function safeJsonParse(text) {
+  try { return JSON.parse(text); } catch {}
+  const cleaned = `${text || ""}`.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/, "");
+  try { return JSON.parse(cleaned); } catch {}
+  return null;
+}
+
+function normalizeInterpretStructured(obj, fallbackText = "") {
+  const parsed = obj && typeof obj === "object" ? obj : {};
+  const gaps = Array.isArray(parsed.gaps) ? parsed.gaps.map((x) => `${x}`.trim()).filter(Boolean) : [];
+  const evidenceRequested = Array.isArray(parsed.evidenceRequested) ? parsed.evidenceRequested.map((x) => `${x}`.trim()).filter(Boolean) : [];
+  const sourcesUsed = Array.isArray(parsed.sourcesUsed) ? parsed.sourcesUsed.map((x) => `${x}`.trim()).filter(Boolean) : [];
+  let suggestedRating = Number(parsed.suggestedRating);
+  if (!Number.isFinite(suggestedRating)) suggestedRating = 0;
+  suggestedRating = Math.max(0, Math.min(5, suggestedRating));
+  let confidence = Number(parsed.confidence);
+  if (!Number.isFinite(confidence)) confidence = 0;
+  confidence = Math.max(0, Math.min(1, confidence));
+  const alignment = `${parsed.alignment || fallbackText || ""}`.trim() || "No interpretation returned.";
+  const insufficientEvidence = confidence < 0.55 || evidenceRequested.length >= 4;
+  return { alignment, gaps, evidenceRequested, suggestedRating, confidence, sourcesUsed, insufficientEvidence };
+}
+
+async function aiComplete(systemPrompt, userPrompt) {
+  if (!aiFeaturesEnabled()) throw new Error("AI features are only available in Advanced mode.");
+  const provider = activeAiProvider();
+  if (!aiProviderReady()) throw new Error("AI provider credentials/settings are incomplete.");
+  const pre = providerPreflightValidation(provider);
+  if (pre.errors.length) {
+    addAiDiagnostic({ provider, status: "ERROR", stage: "PREFLIGHT", action: "aiComplete", message: pre.errors[0], details: { errors: pre.errors, warnings: pre.warnings } });
+    throw new Error(pre.errors[0]);
+  }
+  if (pre.warnings.length) {
+    addAiDiagnostic({ provider, status: "WARN", stage: "PREFLIGHT", action: "aiComplete", message: pre.warnings[0], details: { warnings: pre.warnings } });
+  }
+  addAiDiagnostic({
+    provider,
+    status: "INFO",
+    stage: "REQUEST",
+    action: "aiComplete",
+    message: "AI request started",
+    details: { promptChars: `${systemPrompt || ""}`.length + `${userPrompt || ""}`.length, provider }
+  });
+
+  try {
+    const fetchWithTimeout = async (url, options = {}) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), AI_PROVIDER_TIMEOUT_MS);
+      try {
+        return await fetch(url, { ...options, signal: controller.signal });
+      } catch (err) {
+        if (err && err.name === "AbortError") {
+          throw new Error(`AI request timed out after ${Math.round(AI_PROVIDER_TIMEOUT_MS / 1000)} seconds.`);
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+    if (provider === "openai") {
+      const res = await fetchWithTimeout("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${state.settings.openaiKey}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4.1-mini",
+          input: [
+            { role: "system", content: [{ type: "input_text", text: systemPrompt }] },
+            { role: "user", content: [{ type: "input_text", text: userPrompt }] }
+          ]
+        })
+      });
+      const text = await res.text();
+      let payload = {};
+      try { payload = text ? JSON.parse(text) : {}; } catch { throw new Error(text || "OpenAI response parse failed"); }
+      if (!res.ok) throw new Error(`[OpenAI ${res.status}] ${payload.error?.message || payload.error || "Request failed"}`);
+      if (payload.output_text) {
+        addAiDiagnostic({ provider, status: "SUCCESS", stage: "RESPONSE", action: "aiComplete", message: "OpenAI request succeeded", details: { status: res.status } });
+        return `${payload.output_text}`.trim();
+      }
+      const chunks = [];
+      for (const o of payload.output || []) {
+        for (const c of o.content || []) {
+          if ((c.type === "output_text" || c.type === "text") && c.text) chunks.push(c.text);
+        }
+      }
+      addAiDiagnostic({ provider, status: "SUCCESS", stage: "RESPONSE", action: "aiComplete", message: "OpenAI request succeeded", details: { status: res.status } });
+      return chunks.join("\n").trim() || "No output returned.";
+    }
+
+    if (provider === "anthropic") {
+      const res = await fetchWithTimeout("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": state.settings.anthropicKey,
+          "anthropic-version": "2023-06-01"
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-sonnet-latest",
+          max_tokens: 1200,
+          system: systemPrompt,
+          messages: [{ role: "user", content: userPrompt }]
+        })
+      });
+      const text = await res.text();
+      let payload = {};
+      try { payload = text ? JSON.parse(text) : {}; } catch { throw new Error(text || "Anthropic response parse failed"); }
+      if (!res.ok) throw new Error(`[Anthropic ${res.status}] ${payload.error?.message || payload.error?.type || "Request failed"}`);
+      const out = (payload.content || []).filter((c) => c.type === "text").map((c) => c.text).join("\n").trim();
+      addAiDiagnostic({ provider, status: "SUCCESS", stage: "RESPONSE", action: "aiComplete", message: "Anthropic request succeeded", details: { status: res.status } });
+      return out || "No output returned.";
+    }
+
+    if (provider === "gemini") {
+      const model = "gemini-flash-latest";
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(state.settings.geminiKey)}`;
+      const res = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }]
+        })
+      });
+      const text = await res.text();
+      let payload = {};
+      try { payload = text ? JSON.parse(text) : {}; } catch { throw new Error(text || "Gemini response parse failed"); }
+      if (!res.ok) throw new Error(`[Gemini ${res.status}] ${payload.error?.message || "Request failed"}`);
+      const parts = (((payload.candidates || [])[0] || {}).content || {}).parts || [];
+      const out = parts.map((p) => p.text).filter(Boolean).join("\n").trim();
+      addAiDiagnostic({ provider, status: "SUCCESS", stage: "RESPONSE", action: "aiComplete", message: "Gemini request succeeded", details: { status: res.status, model } });
+      return out || "No output returned.";
+    }
+
+    const endpoint = `${state.settings.azureEndpoint || ""}`.replace(/\/+$/, "");
+    const deployment = state.settings.azureDeployment || "";
+    const apiVersion = state.settings.azureApiVersion || "2024-10-21";
+    const url = `${endpoint}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const res = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": state.settings.azureApiKey
+      },
+      body: JSON.stringify({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt }
+        ],
+        temperature: 0.2
+      })
+    });
+    const text = await res.text();
+    let payload = {};
+    try { payload = text ? JSON.parse(text) : {}; } catch { throw new Error(text || "Azure OpenAI response parse failed"); }
+    if (!res.ok) throw new Error(`[Azure OpenAI ${res.status}] ${payload.error?.message || "Request failed"}`);
+    const out = (((payload.choices || [])[0] || {}).message || {}).content || "";
+    addAiDiagnostic({ provider, status: "SUCCESS", stage: "RESPONSE", action: "aiComplete", message: "Azure OpenAI request succeeded", details: { status: res.status, endpoint } });
+    return `${out}`.trim() || "No output returned.";
+  } catch (err) {
+    const formatted = formatProviderError(provider, err.message || `${err}`);
+    addAiDiagnostic({
+      provider,
+      status: "ERROR",
+      stage: "RESPONSE",
+      action: "aiComplete",
+      message: formatted,
+      details: { provider, raw: `${err.message || err}`, hint: "See provider settings and preflight validation." }
+    });
+    throw new Error(formatted);
+  }
+}
+
+function explainabilityDetails(assessment, control, interpretStructured) {
+  const ctx = assessment.data.context || {};
+  const explicit = [];
+  const inferred = [];
+  const frameworks = getApplicableFrameworks(ctx);
+  if (ctx.country) explicit.push(`country: ${ctx.country}`);
+  if (ctx.stateProvince) explicit.push(`state/province: ${ctx.stateProvince}`);
+  if (ctx.industry) explicit.push(`industry text: ${ctx.industry}`);
+  if (ctx.industrySector) explicit.push(`industry sector: ${ctx.industrySector}`);
+  if (frameworks.length) explicit.push(`frameworks: ${frameworks.join("; ")}`);
+  const inferredSector = inferSectorFromIndustryText(ctx.industry || "");
+  if (!ctx.industrySector && inferredSector) inferred.push(`industry sector inferred from industry text: ${inferredSector}`);
+  if (!frameworks.length) inferred.push("no explicit frameworks selected; recommendations use ISO 42001 baseline assumptions");
+  if (!ctx.country) inferred.push("geography not specified; recommendations use global baseline");
+  return {
+    control: control.control,
+    clause: control.clause,
+    contextUsed: explicit,
+    frameworksConsidered: frameworks.length ? frameworks : ["ISO/IEC 42001 baseline"],
+    inferred,
+    sourcesUsed: (interpretStructured && interpretStructured.sourcesUsed) || ["context", "response text", "control metadata"]
+  };
+}
+
+function heuristicSectionInsights(assessment, section) {
+  const insights = { topWeaknesses: [], quickWins: [], nextQuestions: [], source: "heuristic", updatedAt: nowIso() };
+  if (section.type === "controls") {
+    const findings = detectAnalysisFindings(assessment).filter((f) => section.controls.some((c) => c.id === f.controlId));
+    const weakControls = section.controls
+      .map((c) => ({ c, score: Number(assessment.data.ratings[c.id] || 0) }))
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 3);
+    insights.topWeaknesses = weakControls.map((x) => `${x.c.control}: scored ${x.score || 0}/5; strengthen design + operating evidence.`);
+    if (findings.length) insights.topWeaknesses = insights.topWeaknesses.concat(findings.slice(0, 2).map((f) => `${f.type}: ${f.message}`)).slice(0, 3);
+    insights.quickWins = weakControls.map((x) => `For ${x.c.control}, document owner, control frequency, and last 3 months of evidence artifacts.`).slice(0, 3);
+    insights.nextQuestions = section.controls.slice(0, 3).map((c) => `Who signs off ${c.control}, and what evidence proves it is currently operating?`);
+  } else {
+    const required = section.fields.filter((f) => f.required);
+    const missing = required.filter((f) => !isContextFieldComplete(assessment.data.context || {}, f));
+    insights.topWeaknesses = missing.slice(0, 3).map((f) => `Missing required context: ${f.label}`);
+    insights.quickWins = missing.slice(0, 3).map((f) => `Complete ${f.label} with specific, auditable detail.`);
+    insights.nextQuestions = [
+      "Which legal/regulatory frameworks are in-scope for your operating geographies?",
+      "Which accountable role owns AI risk acceptance?",
+      "What is your target AI governance maturity and by when?"
+    ];
+  }
+  if (!insights.topWeaknesses.length) insights.topWeaknesses = ["No major weaknesses detected from current section inputs."];
+  if (!insights.quickWins.length) insights.quickWins = ["Maintain current evidence and ensure review cadence is documented."];
+  return insights;
+}
+
+async function generateSectionInsights(assessment, section) {
+  const fallback = heuristicSectionInsights(assessment, section);
+  if (!aiFeaturesEnabled() || !aiProviderReady()) return fallback;
+  const ctx = assessment.data.context || {};
+  const contextMasked = {};
+  Object.entries(ctx).forEach(([k, v]) => {
+    contextMasked[k] = typeof v === "string" ? maskSensitiveText(v, [state.profile?.name, state.profile?.email, ctx.orgName, ctx.orgLegalName]) : v;
+  });
+  const sectionPayload = section.type === "controls"
+    ? section.controls.map((c) => ({
+        control: c.control,
+        clause: c.clause,
+        rating: Number(assessment.data.ratings[c.id] || 0),
+        notes: maskSensitiveText((ensureEvidence(assessment, c.id).notes || "").slice(0, 900), [state.profile?.name, state.profile?.email, ctx.orgName, ctx.orgLegalName])
+      }))
+    : section.fields.map((f) => ({ field: f.label, required: !!f.required, value: `${ctx[f.key] || ""}`.slice(0, 240) }));
+  const prompt = [
+    "Create section improvement insights for an ISO 42001 assessment.",
+    `Section: ${section.title}`,
+    `Context: ${JSON.stringify(contextMasked)}`,
+    `Section data: ${JSON.stringify(sectionPayload)}`,
+    "Return strict JSON only with keys:",
+    "{\"topWeaknesses\":[\"...\"],\"quickWins\":[\"...\"],\"nextQuestions\":[\"...\"]}",
+    "Each list must contain exactly 3 concise items."
+  ].join("\n");
+  try {
+    const output = await aiComplete(
+      "You are an ISO 42001 improvement planning assistant. Return valid JSON only.",
+      prompt
+    );
+    const parsed = safeJsonParse(output || "");
+    const out = parsed && typeof parsed === "object" ? parsed : {};
+    const toList = (v, dflt) => (Array.isArray(v) ? v.map((x) => `${x}`.trim()).filter(Boolean).slice(0, 3) : dflt);
+    return {
+      topWeaknesses: toList(out.topWeaknesses, fallback.topWeaknesses).slice(0, 3),
+      quickWins: toList(out.quickWins, fallback.quickWins).slice(0, 3),
+      nextQuestions: toList(out.nextQuestions, fallback.nextQuestions).slice(0, 3),
+      source: "ai",
+      updatedAt: nowIso()
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function roleSpecificQuestions(role, control) {
+  const r = `${role || "CONTRIBUTOR"}`.toUpperCase();
+  if (r === "CISO") {
+    return [
+      "Which security threats and misuse scenarios are covered for this control?",
+      "What technical security evidence (access control, monitoring, key/secrets, incident logs) supports effectiveness?"
+    ];
+  }
+  if (r === "CRO" || r === "RISK") {
+    return [
+      "How is residual risk quantified and accepted for this control?",
+      "What risk indicators, thresholds, and escalation triggers are documented?"
+    ];
+  }
+  if (r === "LEGAL" || r === "DPO") {
+    return [
+      "What legal/privacy obligations are addressed by this control in operating geographies?",
+      "Which policy, contract, or assessment artifacts demonstrate compliance?"
+    ];
+  }
+  if (r === "COMPLIANCE") {
+    return [
+      "What audit trail exists for this control (owner, approvals, review cadence)?",
+      "What independent challenge or assurance evidence is available?"
+    ];
+  }
+  if (r === "ENGINEERING" || r === "AI_ENGINEERING") {
+    return [
+      "How is this control implemented in systems/workflows and enforced technically?",
+      "What operational telemetry, tests, or runbooks prove it is working?"
+    ];
+  }
+  return [
+    "Which accountable owner confirms this control is in operation?",
+    "What recent, objective evidence demonstrates this control is effective?"
+  ];
+}
+
+function localDelegateResponseAnalysis(control, responseText) {
+  const text = `${responseText || ""}`.trim();
+  const sentences = text.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const summary = (sentences.slice(0, 2).join(" ") || text.slice(0, 280) || "No summary available.").trim();
+  const evidence = [];
+  text.split("\n").map((x) => x.trim()).filter(Boolean).forEach((line) => {
+    if (/\b(policy|procedure|standard|report|register|log|dashboard|ticket|approval|training|contract|audit)\b/i.test(line)) evidence.push(line);
+  });
+  return {
+    summary,
+    extractedEvidence: evidence.slice(0, 6),
+    mappedControl: control.control,
+    mappingRationale: "Local heuristic mapping based on submitted response text."
+  };
+}
+
+async function runDelegateResponseAi(control, responseText, context, role) {
+  if (!aiFeaturesEnabled() || !aiProviderReady()) {
+    return localDelegateResponseAnalysis(control, responseText);
+  }
+  const sensitive = [state.profile?.name, state.profile?.email, context?.orgName, context?.orgLegalName];
+  const maskedControlTitle = maskSensitiveText(control.control, sensitive);
+  const maskedPrompt = maskSensitiveText(control.prompt, sensitive);
+  const maskedResponse = maskSensitiveText(responseText, sensitive);
+  const maskedContext = {};
+  Object.entries(context || {}).forEach(([k, v]) => {
+    maskedContext[k] = typeof v === "string" ? maskSensitiveText(v, sensitive) : v;
+  });
+
+  const schemaPrompt = [
+    "Analyze delegate response for an ISO 42001 assessment control.",
+    `Role: ${role || "CONTRIBUTOR"}`,
+    `Control: ${maskedControlTitle}`,
+    `Control question: ${maskedPrompt}`,
+    `Delegate response: ${maskedResponse}`,
+    `Context: ${JSON.stringify(maskedContext)}`,
+    "Return strict JSON only with keys:",
+    "{\"summary\":\"...\",\"extractedEvidence\":[\"...\"],\"mappedControl\":\"...\",\"mappingRationale\":\"...\"}"
+  ].join("\n");
+
+  const raw = `${await aiComplete("You are an ISO 42001 delegation analysis assistant. Return valid JSON only.", schemaPrompt) || ""}`.trim();
+  try {
+    const parsed = JSON.parse(raw);
+    return {
+      summary: `${parsed.summary || ""}`.trim() || "No summary returned.",
+      extractedEvidence: Array.isArray(parsed.extractedEvidence) ? parsed.extractedEvidence.slice(0, 8) : [],
+      mappedControl: `${parsed.mappedControl || control.control}`.trim(),
+      mappingRationale: `${parsed.mappingRationale || "Mapped to selected control."}`.trim()
+    };
+  } catch {
+    return localDelegateResponseAnalysis(control, responseText);
+  }
+}
+
+function frameworkObligationMap() {
+  return {
+    "EU AI Act": {
+      appliesTo: ["c4_scope", "c5_policy", "c5_roles", "c6_risk_method", "c6_risk_register", "c8_validation", "c8_human", "c8_incident", "c9_reporting"],
+      obligation: "Demonstrate risk management, human oversight, transparency, and post-market monitoring for AI systems."
+    },
+    GDPR: {
+      appliesTo: ["c5_policy", "c6_risk_method", "c8_data_quality", "c8_human", "c8_incident", "c9_reporting"],
+      obligation: "Protect personal data, enforce lawful processing, and support data-subject and accountability obligations."
+    },
+    "NIST AI RMF 1.0": {
+      appliesTo: ["c4_scope", "c5_oversight", "c6_risk_method", "c6_risk_register", "c8_validation", "c9_monitor", "c10_continuous"],
+      obligation: "Show governance, measurement, risk management, and ongoing monitoring of AI harms."
+    },
+    "ISO/IEC 23894 (AI risk management)": {
+      appliesTo: ["c6_risk_method", "c6_risk_register", "c6_acceptance", "c9_monitor", "c10_corrective"],
+      obligation: "Establish and maintain lifecycle AI risk assessment, treatment, and residual risk acceptance."
+    },
+    "FTC AI and automated decision guidance": {
+      appliesTo: ["c5_policy", "c8_validation", "c8_human", "c9_reporting"],
+      obligation: "Substantiate fairness and accuracy claims, avoid deceptive/biased automated decisions."
+    },
+    "UK GDPR": {
+      appliesTo: ["c5_policy", "c8_data_quality", "c8_human", "c8_incident", "c9_reporting"],
+      obligation: "Demonstrate lawful, fair, transparent automated processing and data protection controls."
+    },
+    "Singapore Model AI Governance Framework": {
+      appliesTo: ["c5_oversight", "c5_roles", "c8_human", "c9_reporting", "c10_continuous"],
+      obligation: "Establish internal governance, human-centric decisions, and explainability for stakeholders."
+    }
+  };
+}
+
+function baselineEvidenceForControl(control) {
+  const map = {
+    c4_scope: ["Approved AIMS scope statement", "Documented inclusions/exclusions and rationale"],
+    c5_policy: ["Approved AI policy documents", "Policy communication/training records"],
+    c5_roles: ["RACI with accountable owners", "Evidence of decision-right assignments"],
+    c5_oversight: ["Governance forum minutes", "Action log with owners and due dates"],
+    c5_objectives: ["AI KPI catalogue", "Periodic KPI reporting evidence"],
+    c6_risk_method: ["Documented AI risk methodology", "Completed risk assessments across lifecycle stages"],
+    c6_risk_register: ["Current AI risk register", "Assigned owners and treatment deadlines"],
+    c6_change: ["AI change assessment checklist", "Pre-release sign-off evidence"],
+    c6_third_party: ["Third-party AI due diligence records", "Contractual AI risk/security clauses"],
+    c6_acceptance: ["Residual risk acceptance records", "Approval authority and thresholds"],
+    c7_competence: ["Role-based training matrix", "Training completion logs"],
+    c7_awareness: ["Awareness campaign evidence", "Staff attestations"],
+    c7_docs: ["Controlled document repository", "Version/review/retention metadata"],
+    c7_comms: ["AI communications protocol", "Incident/regulator communication templates"],
+    c8_data_quality: ["Data lineage documentation", "Data quality test results"],
+    c8_validation: ["Model validation reports", "Bias/robustness/performance test evidence"],
+    c8_human: ["Human-in-the-loop procedures", "Override logs with rationale"],
+    c8_incident: ["AI incident playbook", "Incident tickets with RCA and closure evidence"],
+    c8_security: ["Access control matrix for AI assets", "Secrets/key management and monitoring logs"],
+    c9_monitor: ["Monitoring dashboards and thresholds", "Triggered alerts and remediation evidence"],
+    c9_audit: ["Internal audit plans and reports", "Remediation tracking evidence"],
+    c9_review: ["Management review packs", "Documented decisions and follow-up actions"],
+    c9_reporting: ["Stakeholder AI reports", "Transparency/disclosure records"],
+    c10_corrective: ["Corrective action plans", "Effectiveness verification evidence"],
+    c10_lessons: ["Lessons-learned records", "Updated controls/training evidence"],
+    c10_continuous: ["Improvement roadmap", "Progress and milestone tracking"]
+  };
+  return map[control.id] || ["Control design documentation", "Operating evidence with owner/date", "Periodic review evidence"];
+}
+
+function regulatoryMappingForControl(control, context) {
+  const frameworks = getApplicableFrameworks(context);
+  const sector = context.industrySector || inferSectorFromIndustryText(context.industry || "");
+  const geography = [context.country, context.stateProvince].filter(Boolean).join(", ");
+  const obligationMap = frameworkObligationMap();
+
+  const relevant = frameworks
+    .map((name) => ({ framework: name, rule: obligationMap[name] }))
+    .filter((x) => x.rule && x.rule.appliesTo.includes(control.id))
+    .map((x) => ({ framework: x.framework, obligation: x.rule.obligation }));
+
+  if (!relevant.length && frameworks.length) {
+    relevant.push(...frameworks.slice(0, 2).map((fw) => ({
+      framework: fw,
+      obligation: "Show this control supports governance, risk reduction, and accountability obligations under the selected framework."
+    })));
+  }
+
+  const why = [
+    geography ? `Operates in ${geography}` : "",
+    sector ? `Industry sector ${sector}` : "",
+    frameworks.length ? `Mapped to ${frameworks.length} selected framework(s)` : "No frameworks selected yet"
+  ].filter(Boolean).join(" | ");
+
+  return {
+    why,
+    obligations: relevant,
+    minimumEvidence: baselineEvidenceForControl(control)
+  };
+}
+
+async function runOpenAi(mode, control, responseText, context) {
+  if (!aiFeaturesEnabled() || !aiProviderReady()) {
+    throw new Error("AI is available in Advanced mode with provider credentials configured.");
+  }
+
+  const sensitive = [state.profile?.name, state.profile?.email, context?.orgName, context?.orgLegalName];
+  const maskedResponse = maskSensitiveText(responseText, sensitive);
+  const maskedControlTitle = maskSensitiveText(control.control, sensitive);
+  const maskedControlPrompt = maskSensitiveText(control.prompt, sensitive);
+  const maskedBest = maskSensitiveText(control.bestPractice, sensitive);
+  const maskedContext = {};
+  Object.entries(context || {}).forEach(([k, v]) => {
+    maskedContext[k] = typeof v === "string" ? maskSensitiveText(v, sensitive) : v;
+  });
+
+  const system = mode === "example"
+    ? "You are an ISO 42001 audit advisor. Provide practical, relevant examples of strong controls. Inputs are masked. Personalize output to geography, industry sector and applicable regulations in context."
+    : "You are an ISO 42001 audit advisor. Interpret responses and identify strengths/gaps. Inputs are masked. Personalize output to geography, industry sector and applicable regulations in context. Return strict JSON only.";
+
+  const userPrompt = mode === "example"
+    ? [
+        `Control: ${maskedControlTitle}`,
+        `Question: ${maskedControlPrompt}`,
+        `Best practice: ${maskedBest}`,
+        `Current response: ${maskedResponse}`,
+        `Context: ${JSON.stringify(maskedContext)}`,
+        "Generate 2 relevant example implementations with evidence expectations tailored to this context."
+      ].join("\n")
+    : [
+        `Control: ${maskedControlTitle}`,
+        `Question: ${maskedControlPrompt}`,
+        `Best practice: ${maskedBest}`,
+        `Current response: ${maskedResponse}`,
+        `Context: ${JSON.stringify(maskedContext)}`,
+        "Return strict JSON only with keys:",
+        "{\"alignment\":\"...\",\"gaps\":[\"...\"],\"evidenceRequested\":[\"...\"],\"suggestedRating\":0-5,\"confidence\":0-1,\"sourcesUsed\":[\"response text\",\"context\",\"selected frameworks\"]}",
+        "No prose outside JSON."
+      ].join("\n");
+
+  return aiComplete(system, userPrompt);
+}
+
+async function runOpenAiCopilot(action, control, responseText, context) {
+  if (!aiFeaturesEnabled() || !aiProviderReady()) {
+    throw new Error("AI is available in Advanced mode with provider credentials configured.");
+  }
+  const sensitive = [state.profile?.name, state.profile?.email, context?.orgName, context?.orgLegalName];
+  const maskedResponse = maskSensitiveText(responseText, sensitive);
+  const maskedControlTitle = maskSensitiveText(control.control, sensitive);
+  const maskedControlPrompt = maskSensitiveText(control.prompt, sensitive);
+  const maskedBest = maskSensitiveText(control.bestPractice, sensitive);
+  const maskedContext = {};
+  Object.entries(context || {}).forEach(([k, v]) => {
+    maskedContext[k] = typeof v === "string" ? maskSensitiveText(v, sensitive) : v;
+  });
+
+  const actionMap = {
+    draft: "Draft a first-pass response as if written by the organization, with concrete control design and operating evidence.",
+    improve: "Improve the existing response by increasing specificity, clarity, and audit usefulness.",
+    tighten: "Shorten and strengthen the response into concise, high-value audit language."
+  };
+  const actionText = actionMap[action] || actionMap.improve;
+
+  const system = "You are an ISO 42001 audit response copilot. Produce practical, evidence-oriented response text tailored to geography, sector, and applicable frameworks in context.";
+  const userPrompt = [
+    `Task: ${actionText}`,
+    `Control: ${maskedControlTitle}`,
+    `Question: ${maskedControlPrompt}`,
+    `Best practice: ${maskedBest}`,
+    `Current response: ${maskedResponse || "(none provided)"}`,
+    `Context: ${JSON.stringify(maskedContext)}`,
+    "Output only the revised response text. No bullets unless essential. No preamble."
+  ].join("\n");
+
+  return aiComplete(system, userPrompt);
+}
+
+async function testOpenAiConnection() {
+  if (!aiProviderReady()) throw new Error("Provider credentials/settings are incomplete.");
+  try {
+    await Promise.race([
+      aiComplete("You are a connectivity check endpoint.", "Reply with: OK"),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error(`Connection test timed out after ${Math.round(AI_PROVIDER_TIMEOUT_MS / 1000)} seconds.`)), AI_PROVIDER_TIMEOUT_MS))
+    ]);
+    return true;
+  } catch (err) {
+    if (`${err.message || ""}`.toLowerCase().includes("timed out")) throw new Error(`Connection test timed out after ${Math.round(AI_PROVIDER_TIMEOUT_MS / 1000)} seconds.`);
+    throw err;
+  }
+}
+
+function draftEmail(to, subject, body) {
+  const params = new URLSearchParams({ subject, body });
+  window.location.href = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
+}
+
+function updateDelegationStatus(assessment, delegationId, targetStatus) {
+  const allowed = {
+    SENT: ["RESPONDED", "CLOSED"],
+    RESPONDED: ["CLOSED"],
+    CLOSED: []
+  };
+  const batches = allDelegationBatches(assessment);
+  const batch = batches.find((b) => b.delegationId === delegationId);
+  if (!batch) return { ok: false, error: "Delegation not found." };
+  const current = (batch.status || "SENT").toUpperCase();
+  const next = (targetStatus || "").toUpperCase();
+  if (current === next) return { ok: true };
+  if (!(allowed[current] || []).includes(next)) {
+    return { ok: false, error: `Invalid transition from ${current} to ${next}.` };
+  }
+  Object.keys(assessment.data.delegates || {}).forEach((controlId) => {
+    assessment.data.delegates[controlId] = (assessment.data.delegates[controlId] || []).map((d) =>
+      d.delegationId === delegationId ? { ...d, status: next } : d
+    );
+  });
+  logDelegationEvent(assessment, delegationId, "STATUS_CHANGED", { from: current, to: next });
+  assessment.updatedAt = nowIso();
+  saveAssessments();
+  return { ok: true };
+}
+
+function renderDelegationsPage(assessment) {
+  const batches = allDelegationBatches(assessment);
+  app.innerHTML = `
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>Delegations Audit Trail</h1><span class="meta-pill">Audit log</span></div>
+          <p>${escapeHtml(assessment.title)} | ${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
+        </div>
+        <div class="actions">
+          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
+          <button class="btn secondary" id="refreshDelegationsBtn">↻ Refresh</button>
+          <button class="btn ghost" id="backToAssessmentBtn">← Back to Assessment</button>
+        </div>
+      </header>
+      <main class="container card content">
+        <div class="list-head"><h2 style="margin:0;">Delegation Records</h2><span class="meta-pill">${batches.length} delegations</span></div>
+        <p class="hint">Track status transitions, view response history, and close completed delegation threads.</p>
+        ${batches.length === 0 ? "<p>No delegations yet.</p>" : batches.map((b) => {
+          const status = `${b.status || "SENT"}`.toUpperCase();
+          const statusTone = status === "CLOSED" ? "ok" : status === "RESPONDED" ? "warn" : "info";
+          const history = (assessment.data.delegationEvents || []).filter((e) => e.delegationId === b.delegationId).sort((a, z) => `${a.createdAt}`.localeCompare(`${z.createdAt}`));
+          return `
+            <div class="question delegate-record">
+              <h3>${escapeHtml(b.name || b.email)}</h3>
+              <p class="hint">${escapeHtml(b.title || "")} | ${escapeHtml(b.email)} | Delegated ${escapeHtml(new Date(b.delegatedAt || Date.now()).toLocaleString())}</p>
+              <div class="control-meta meta-cluster">
+                <span class="tag">Role: ${escapeHtml(b.role || "CONTRIBUTOR")}</span>
+                <span class="tag ${statusTone}">Status: ${escapeHtml(status)}</span>
+              </div>
+              <p><strong>Controls:</strong> ${escapeHtml(b.controls.map((c) => c.control).join("; "))}</p>
+              <div class="actions">
+                <button class="btn secondary small" data-status-update="${escapeHtml(b.delegationId)}:RESPONDED" ${(b.status || "SENT") !== "SENT" ? "disabled" : ""}>Mark RESPONDED</button>
+                <button class="btn secondary small" data-status-update="${escapeHtml(b.delegationId)}:CLOSED" ${(b.status || "SENT") === "CLOSED" ? "disabled" : ""}>Mark CLOSED</button>
+              </div>
+              <div class="evidence">
+                <strong>Response History</strong>
+                <ul class="evidence-list">
+                  ${history.length ? history.map((h) => `<li><strong>${escapeHtml(new Date(h.createdAt).toLocaleString())}</strong> - ${escapeHtml(h.eventType)}${h.controlId ? ` (${escapeHtml(getControl(h.controlId)?.control || h.controlId)})` : ""}</li>`).join("") : "<li>No events recorded yet.</li>"}
+                </ul>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </main>
+    </div>
+  `;
+
+  document.getElementById("homeBtn").addEventListener("click", goHome);
+  document.getElementById("refreshDelegationsBtn").addEventListener("click", () => renderDelegationsPage(assessment));
+  document.getElementById("backToAssessmentBtn").addEventListener("click", () => {
+    state.view = "assessment";
+    render();
+  });
+  document.querySelectorAll("[data-status-update]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const [delegationId, status] = e.currentTarget.dataset.statusUpdate.split(":");
+      const updated = updateDelegationStatus(assessment, delegationId, status);
+      if (!updated.ok) return toast(updated.error);
+      toast(`Status updated to ${status}.`);
+      renderDelegationsPage(assessment);
+    });
+  });
+}
+
+function render() {
+  const assessment = currentAssessment();
+  if (state.view === "delegations" && assessment) return renderDelegationsPage(assessment);
+  if (assessment) return renderAssessment(assessment);
+  return renderWelcome();
+}
+
+function renderWelcome() {
+  const mode = assessmentMode();
+  const aiMode = aiFeaturesEnabled();
+  const hasProfile = !!(state.profile && state.profile.name && state.profile.email);
+  const showAiSettings = mode === "advanced" && !!state.settings.settingsOpen;
+  const provider = activeAiProvider();
+  const setupLink = providerSetupLink(provider);
+  const preflight = providerPreflightValidation(provider);
+  const diagnostics = (state.settings.aiDiagnostics || []).slice().reverse().slice(0, 25);
+  const rows = state.assessments.slice().sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  const avgScore = rows.length ? Math.round(rows.reduce((sum, a) => sum + weightedScorePercent(a), 0) / rows.length) : 0;
+  const completedCount = rows.filter((a) => completionPercent(a) >= 100).length;
+  const inProgressCount = Math.max(0, rows.length - completedCount);
+  app.innerHTML = `
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>Align42</h1><span class="meta-pill">${mode === "advanced" ? "Advanced mode" : "Simple mode"}</span>${mode === "advanced" ? `<span class="meta-pill ${aiMode ? "ok-pill" : ""}">${aiMode ? "AI on" : "AI off"}</span>` : ""}</div>
+          <p>${escapeHtml(state.profile?.name || "Profile not set")} (${escapeHtml(state.profile?.email || "email not set")})</p>
+        </div>
+        <div class="actions">
+          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
+          <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
+          <button class="btn ghost" id="editProfileBtn">👤 Edit Profile</button>
+        </div>
+      </header>
+
+      <div class="container card content">
+        <div class="welcome-metrics">
+          <div class="metric-card"><div class="metric-label">Saved assessments</div><div class="metric-value">${rows.length}</div></div>
+          <div class="metric-card"><div class="metric-label">In progress</div><div class="metric-value">${inProgressCount}</div></div>
+          <div class="metric-card"><div class="metric-label">Completed</div><div class="metric-value">${completedCount}</div></div>
+          <div class="metric-card"><div class="metric-label">Average score</div><div class="metric-value">${avgScore}%</div></div>
+        </div>
+        <div class="setup-grid">
+        ${hasProfile ? "" : `
+          <div class="question">
+            <h3>Set Up Your Profile</h3>
+            <p class="hint">Enter your name and email to start or open assessments.</p>
+            <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" /></label>
+            <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" /></label>
+            <button class="btn primary" id="saveProfileBtn">Save Profile</button>
+          </div>
+        `}
+        <div class="question">
+          <h3>Assessment Mode</h3>
+          <p class="hint">Simple mode is optimized for generalists. Advanced mode enables deeper, more granular specialist scoring and recommendations.</p>
+          <label style="display:flex; align-items:center; gap:0.5rem;">
+            <select id="assessmentModeSelect">
+              <option value="simple" ${mode === "simple" ? "selected" : ""}>Simple (generalist)</option>
+              <option value="advanced" ${mode === "advanced" ? "selected" : ""}>Advanced (specialist)</option>
+            </select>
+          </label>
+          <p class="hint">${mode === "advanced" ? "Advanced mode: 0.5-step scoring, richer evidence quality breakdown, and nuanced AI recommendations." : "Simple mode: quick 1-5 scoring with concise guidance."}</p>
+        </div>
+
+        <div class="question">
+          <h3>AI Mode</h3>
+          ${mode === "advanced" ? `
+          <p class="hint">Enable optional generative AI support for interpretation and examples.</p>
+          <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
+            <input id="aiModeToggle" type="checkbox" ${aiMode ? "checked" : ""} />
+            <span>${aiMode ? "AI mode enabled" : "AI mode disabled"}</span>
+            ${aiMode ? `<button class="btn ghost small icon-btn" id="aiSettingsToggleBtn" title="Open AI settings" type="button">⚙</button>` : ""}
+          </label>
+          ${aiDisabledReason() ? `<p class="hint"><strong>AI unavailable:</strong> ${escapeHtml(aiDisabledReason())}</p>` : `<p class="hint"><strong>AI status:</strong> Ready (${escapeHtml(providerLabel())}).</p>`}
+          ` : `<p class="hint">AI features are hidden in Simple mode. Switch to Advanced mode to configure and use AI.</p>`}
+
+          <div id="aiSettingsPanel" style="display:${mode === "advanced" && showAiSettings ? "block" : "none"}; margin-top:0.8rem; border-top:1px dashed var(--line); padding-top:0.8rem;">
+            <h3>AI Settings</h3>
+            <label>Credential Storage
+              <select id="aiCredentialStorageSelect">
+                <option value="session" ${state.settings.aiCredentialStorage === "persistent" ? "" : "selected"}>Session only (recommended)</option>
+                <option value="persistent" ${state.settings.aiCredentialStorage === "persistent" ? "selected" : ""}>Persist on this device</option>
+              </select>
+            </label>
+            <p class="hint">${state.settings.aiCredentialStorage === "persistent" ? "Provider credentials are persisted in local browser storage on this device." : "Provider credentials are kept in-memory for this session and are not persisted to local storage."}</p>
+            <label>AI Provider
+              <select id="aiProviderSelect">
+                <option value="openai" ${provider === "openai" ? "selected" : ""}>OpenAI</option>
+                <option value="anthropic" ${provider === "anthropic" ? "selected" : ""}>Anthropic Claude</option>
+                <option value="gemini" ${provider === "gemini" ? "selected" : ""}>Google Gemini</option>
+                <option value="azure_openai" ${provider === "azure_openai" ? "selected" : ""}>Azure OpenAI</option>
+              </select>
+            </label>
+            ${provider === "openai" ? `
+              <label>OpenAI API Key
+                <input id="openaiKeyInput" type="password" placeholder="sk-..." value="${escapeHtml(state.settings.openaiKey || "")}" />
+              </label>
+            ` : ""}
+            ${provider === "anthropic" ? `
+              <label>Anthropic API Key
+                <input id="anthropicKeyInput" type="password" placeholder="sk-ant-..." value="${escapeHtml(state.settings.anthropicKey || "")}" />
+              </label>
+            ` : ""}
+            ${provider === "gemini" ? `
+              <label>Gemini API Key
+                <input id="geminiKeyInput" type="password" placeholder="AIza..." value="${escapeHtml(state.settings.geminiKey || "")}" />
+              </label>
+            ` : ""}
+            ${provider === "azure_openai" ? `
+              <label>Azure OpenAI API Key
+                <input id="azureApiKeyInput" type="password" placeholder="Azure API key" value="${escapeHtml(state.settings.azureApiKey || "")}" />
+              </label>
+              <label>Azure Endpoint
+                <input id="azureEndpointInput" type="text" placeholder="https://your-resource.openai.azure.com" value="${escapeHtml(state.settings.azureEndpoint || "")}" />
+              </label>
+              <label>Azure Deployment Name
+                <input id="azureDeploymentInput" type="text" placeholder="gpt-4o-mini" value="${escapeHtml(state.settings.azureDeployment || "")}" />
+              </label>
+              <label>Azure API Version
+                <input id="azureApiVersionInput" type="text" placeholder="2024-10-21" value="${escapeHtml(state.settings.azureApiVersion || "2024-10-21")}" />
+              </label>
+            ` : ""}
+            <div class="actions">
+              <button class="btn secondary" id="testAiSettingsBtn">Test API Connection</button>
+              <button class="btn secondary" id="saveAiSettingsBtn">Save AI Settings</button>
+              <a class="btn ghost" href="${setupLink}" target="_blank" rel="noopener noreferrer">Provider API Setup Instructions</a>
+            </div>
+            ${preflight.errors.length ? `<div class="evidence"><strong>Provider preflight errors</strong><ul class="evidence-list">${preflight.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+            ${preflight.warnings.length ? `<div class="evidence"><strong>Provider preflight warnings</strong><ul class="evidence-list">${preflight.warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+            <div class="question" style="margin-top:0.7rem;">
+              <p class="hint"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align 42 you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
+              <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.45rem;">
+                <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
+                <span>I understand</span>
+              </label>
+            </div>
+            <details class="question">
+              <summary><strong>API Diagnostics</strong></summary>
+              <p class="hint">Recent connection and request diagnostics (redacted).</p>
+              <div class="actions">
+                <button class="btn ghost small" type="button" id="clearAiDiagnosticsBtn">Clear Diagnostics</button>
+                <button class="btn ghost small" type="button" id="exportAiDiagnosticsBtn">Export Diagnostics JSON</button>
+              </div>
+              ${diagnostics.length ? `<ul class="evidence-list">${diagnostics.map((d) => `<li><strong>${escapeHtml(new Date(d.at).toLocaleString())}</strong> [${escapeHtml(d.status)}] ${escapeHtml(d.provider)} / ${escapeHtml(d.stage)}${d.action ? ` / ${escapeHtml(d.action)}` : ""}: ${escapeHtml(d.message)}<details><summary>Details</summary><pre class="diag-pre">${escapeHtml(JSON.stringify(d.details || {}, null, 2))}</pre></details></li>`).join("")}</ul>` : "<p class=\"hint\">No diagnostics yet.</p>"}
+            </details>
+            <p class="hint">Choose session-only storage for stronger local key hygiene.</p>
+          </div>
+        </div>
+        </div>
+
+        <div class="list-head">
+          <h2 style="margin:0;">Saved Assessments</h2>
+          <span class="meta-pill">${rows.length} total</span>
+        </div>
+        <div class="assessment-list">
+          ${rows.length ? rows.map((a) => `
+            <div class="assessment-row">
+              <div>
+                <h3>${escapeHtml(a.title)}</h3>
+                <p>Updated: ${escapeHtml(new Date(a.updatedAt).toLocaleString())} | Score: ${weightedScorePercent(a)}% | Completion: ${completionPercent(a)}%</p>
+                <div class="progress-bar tiny"><div style="width:${completionPercent(a)}%"></div></div>
+              </div>
+              <div class="actions">
+                <button class="btn secondary" data-open="${a.id}">Open</button>
+                <button class="btn ghost" data-delete="${a.id}">Delete</button>
+              </div>
+            </div>
+          `).join("") : `<p>No assessments yet.</p>`}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById("homeBtn").addEventListener("click", goHome);
+  document.getElementById("saveProfileBtn")?.addEventListener("click", () => {
+    const name = document.getElementById("profileName").value.trim();
+    const email = document.getElementById("profileEmail").value.trim();
+    if (!name || !email) return toast("Name and email are required.");
+    state.profile = { name, email };
+    saveProfile();
+    render();
+  });
+
+  document.getElementById("newAssessmentBtn").addEventListener("click", () => {
+    if (!hasProfile) return toast("Set your profile name and email first.");
+    const now = new Date();
+    const dd = `${now.getDate()}`.padStart(2, "0");
+    const mm = `${now.getMonth() + 1}`.padStart(2, "0");
+    const yy = `${now.getFullYear()}`.slice(-2);
+    const title = prompt("Assessment title", `ISO 42001 Assessment - ${dd}/${mm}/${yy}`);
+    if (!title) return;
+    const assessment = { id: uid("asmt"), title: title.trim(), createdAt: nowIso(), updatedAt: nowIso(), data: defaultAssessmentData() };
+    state.assessments.push(assessment);
+    saveAssessments();
+    state.currentAssessmentId = assessment.id;
+    state.view = "assessment";
+    render();
+  });
+
+  document.getElementById("editProfileBtn").addEventListener("click", () => {
+    const name = prompt("Name", state.profile?.name || "");
+    if (name === null) return;
+    const email = prompt("Email", state.profile?.email || "");
+    if (email === null) return;
+    state.profile = { name: name.trim(), email: email.trim() };
+    saveProfile();
+    render();
+  });
+
+  document.getElementById("aiModeToggle")?.addEventListener("change", (e) => {
+    state.settings.aiMode = e.target.checked;
+    state.settings.settingsOpen = e.target.checked;
+    saveSettings();
+    render();
+  });
+  document.getElementById("assessmentModeSelect").addEventListener("change", (e) => {
+    state.settings.assessmentMode = e.target.value === "advanced" ? "advanced" : "simple";
+    if (state.settings.assessmentMode !== "advanced") {
+      state.settings.aiMode = false;
+      state.settings.settingsOpen = false;
+    }
+    saveSettings();
+    render();
+  });
+
+  document.getElementById("aiSettingsToggleBtn")?.addEventListener("click", () => {
+    state.settings.settingsOpen = !state.settings.settingsOpen;
+    saveSettings();
+    render();
+  });
+  document.getElementById("aiProviderSelect")?.addEventListener("change", (e) => {
+    state.settings.aiProvider = e.target.value;
+    saveSettings();
+    render();
+  });
+  document.getElementById("aiCredentialStorageSelect")?.addEventListener("change", (e) => {
+    state.settings.aiCredentialStorage = e.target.value === "persistent" ? "persistent" : "session";
+    saveSettings();
+  });
+
+  document.getElementById("testAiSettingsBtn")?.addEventListener("click", async () => {
+    state.settings.aiCredentialStorage = (document.getElementById("aiCredentialStorageSelect")?.value || state.settings.aiCredentialStorage || "session") === "persistent" ? "persistent" : "session";
+    state.settings.openaiKey = (document.getElementById("openaiKeyInput")?.value || state.settings.openaiKey || "").trim();
+    state.settings.anthropicKey = (document.getElementById("anthropicKeyInput")?.value || state.settings.anthropicKey || "").trim();
+    state.settings.geminiKey = (document.getElementById("geminiKeyInput")?.value || state.settings.geminiKey || "").trim();
+    state.settings.azureApiKey = (document.getElementById("azureApiKeyInput")?.value || state.settings.azureApiKey || "").trim();
+    state.settings.azureEndpoint = (document.getElementById("azureEndpointInput")?.value || state.settings.azureEndpoint || "").trim();
+    state.settings.azureDeployment = (document.getElementById("azureDeploymentInput")?.value || state.settings.azureDeployment || "").trim();
+    state.settings.azureApiVersion = (document.getElementById("azureApiVersionInput")?.value || state.settings.azureApiVersion || "2024-10-21").trim();
+    const pre = providerPreflightValidation(activeAiProvider());
+    if (pre.errors.length) {
+      addAiDiagnostic({ status: "ERROR", stage: "PREFLIGHT", action: "connection_test", message: pre.errors[0], details: { errors: pre.errors, warnings: pre.warnings } });
+      toast(pre.errors[0]);
+      render();
+      return;
+    }
+    if (pre.warnings.length) addAiDiagnostic({ status: "WARN", stage: "PREFLIGHT", action: "connection_test", message: pre.warnings[0], details: { warnings: pre.warnings } });
+    const btn = document.getElementById("testAiSettingsBtn");
+    btn.disabled = true;
+    btn.textContent = "Testing...";
+    try {
+      await testOpenAiConnection();
+      toast("AI provider connection successful.");
+      addAiDiagnostic({ status: "SUCCESS", stage: "CONNECTION", action: "connection_test", message: "Connection test successful." });
+    } catch (err) {
+      const formatted = formatProviderError(activeAiProvider(), err.message || `${err}`);
+      toast(formatted);
+      addAiDiagnostic({ status: "ERROR", stage: "CONNECTION", action: "connection_test", message: formatted, details: { raw: err.message || `${err}` } });
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Test API Connection";
+      render();
+    }
+  });
+
+  document.getElementById("saveAiSettingsBtn")?.addEventListener("click", () => {
+    const disclaimerChecked = !!document.getElementById("aiDisclaimerCheck")?.checked;
+    if (!disclaimerChecked) {
+      toast("You must confirm the AI disclaimer before saving AI settings.");
+      return;
+    }
+    state.settings.aiCredentialStorage = (document.getElementById("aiCredentialStorageSelect")?.value || state.settings.aiCredentialStorage || "session") === "persistent" ? "persistent" : "session";
+    state.settings.openaiKey = (document.getElementById("openaiKeyInput")?.value || state.settings.openaiKey || "").trim();
+    state.settings.anthropicKey = (document.getElementById("anthropicKeyInput")?.value || state.settings.anthropicKey || "").trim();
+    state.settings.geminiKey = (document.getElementById("geminiKeyInput")?.value || state.settings.geminiKey || "").trim();
+    state.settings.azureApiKey = (document.getElementById("azureApiKeyInput")?.value || state.settings.azureApiKey || "").trim();
+    state.settings.azureEndpoint = (document.getElementById("azureEndpointInput")?.value || state.settings.azureEndpoint || "").trim();
+    state.settings.azureDeployment = (document.getElementById("azureDeploymentInput")?.value || state.settings.azureDeployment || "").trim();
+    state.settings.azureApiVersion = (document.getElementById("azureApiVersionInput")?.value || state.settings.azureApiVersion || "2024-10-21").trim();
+    const pre = providerPreflightValidation(activeAiProvider());
+    if (pre.errors.length) {
+      addAiDiagnostic({ status: "ERROR", stage: "PREFLIGHT", action: "save_settings", message: pre.errors[0], details: { errors: pre.errors, warnings: pre.warnings } });
+      toast(pre.errors[0]);
+      return;
+    }
+    const warningMsg = pre.warnings.length ? pre.warnings[0] : "";
+    if (pre.warnings.length) {
+      addAiDiagnostic({ status: "WARN", stage: "PREFLIGHT", action: "save_settings", message: pre.warnings[0], details: { warnings: pre.warnings } });
+    }
+    state.settings.aiDisclaimerAcknowledged = true;
+    state.settings.settingsOpen = false;
+    saveSettings();
+    toast(warningMsg ? `AI settings saved with warning: ${warningMsg}` : "AI settings saved locally.");
+    render();
+  });
+  document.getElementById("clearAiDiagnosticsBtn")?.addEventListener("click", () => {
+    clearAiDiagnostics();
+    toast("AI diagnostics cleared.");
+    render();
+  });
+  document.getElementById("exportAiDiagnosticsBtn")?.addEventListener("click", () => {
+    const payload = {
+      exportedAt: nowIso(),
+      provider: providerLabel(),
+      assessmentMode: assessmentMode(),
+      entries: state.settings.aiDiagnostics || []
+    };
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    download(`align42-ai-diagnostics-${stamp}.json`, "application/json", JSON.stringify(payload, null, 2));
+    toast("AI diagnostics exported.");
+  });
+
+  document.querySelectorAll("[data-open]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      if (!hasProfile) return toast("Set your profile name and email first.");
+      state.currentAssessmentId = e.currentTarget.dataset.open;
+      state.view = "assessment";
+      render();
+    });
+  });
+  document.querySelectorAll("[data-delete]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = e.currentTarget.dataset.delete;
+      if (!confirm("Delete this assessment?")) return;
+      state.assessments = state.assessments.filter((a) => a.id !== id);
+      saveAssessments();
+      render();
+    });
+  });
+}
+
+function renderAssessment(assessment) {
+  stopDictation();
+  const section = sections[assessment.data.currentSection];
+  const completion = completionPercent(assessment);
+  const score = weightedScorePercent(assessment);
+  const delegateOpen = !!(state.ui.delegateOpen && state.ui.delegateOpen[section.id]);
+
+  app.innerHTML = `
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>${escapeHtml(assessment.title)}</h1><span class="meta-pill">Step ${assessment.data.currentSection + 1}/${sections.length}</span></div>
+          <p>${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
+        </div>
+        <div class="actions">
+          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
+          <button class="btn warn" id="delegateBtn">${section.type === "controls" ? (delegateOpen ? "📨 Hide Delegate" : "📨 Delegate") : "Delegate (Controls only)"}</button>
+          <button class="btn secondary" id="delegationsBtn">📋 Delegations</button>
+          <button class="btn secondary" id="saveBtn">💾 Save</button>
+          <button class="btn ghost" id="backBtn">← Back</button>
+        </div>
+      </header>
+      <main class="container layout">
+        <aside class="card sidebar">
+          <h2>📈 Assessment Progress</h2>
+          <p class="hint">Track completion by section and focus first on low-completion or high-risk controls.</p>
+          <div class="progress-wrap">
+            <div class="progress-head"><span>${completion}%</span><span>Complete</span></div>
+            <div class="progress-bar"><div style="width:${completion}%"></div></div>
+          </div>
+          <div class="section-progress-list">
+            ${sections.map((s, i) => {
+              const p = sectionPercent(assessment, s);
+              const stateClass = p >= 100 ? "done" : p > 0 ? "active" : "todo";
+              const currentClass = i === assessment.data.currentSection ? "current" : "";
+              return `<div class="section-progress-item ${stateClass} ${currentClass}"><div class="title"><span>${i + 1}. ${escapeHtml(s.title)}</span><strong>${p}%</strong></div><div class="progress-bar"><div style="width:${p}%"></div></div></div>`;
+            }).join("")}
+          </div>
+          <div class="score-wrap"><div>Weighted alignment score</div><div class="score-pill">${score}%</div></div>
+          <div class="score-wrap">
+            <div>Status legend</div>
+            <div class="control-meta">
+              <span class="tag ok">Compliant</span>
+              <span class="tag warn">Partially aligned</span>
+              <span class="tag no">Non-compliant</span>
+            </div>
+          </div>
+        </aside>
+        <section class="card content" id="wizardSection"></section>
+      </main>
+    </div>
+  `;
+
+  document.getElementById("homeBtn").addEventListener("click", goHome);
+  document.getElementById("saveBtn").addEventListener("click", () => {
+    flushAssessmentSave(assessment);
+    toast("Saved.");
+  });
+  document.getElementById("backBtn").addEventListener("click", () => {
+    flushAssessmentSave(assessment);
+    state.currentAssessmentId = null;
+    state.view = "assessment";
+    render();
+  });
+  document.getElementById("delegationsBtn").addEventListener("click", () => {
+    state.view = "delegations";
+    render();
+  });
+  document.getElementById("delegateBtn").addEventListener("click", () => {
+    if (section.type !== "controls") {
+      toast("Delegation is available on control sections.");
+      return;
+    }
+    if (!state.ui.delegateOpen) state.ui.delegateOpen = {};
+    state.ui.delegateOpen[section.id] = !state.ui.delegateOpen[section.id];
+    renderAssessment(assessment);
+  });
+
+  if (section.type === "context") renderContext(assessment, section);
+  else if (section.type === "controls") renderControls(assessment, section);
+  else renderFinal(assessment);
+}
+
+function renderContext(assessment, section) {
+  const root = document.getElementById("wizardSection");
+  const ctx = assessment.data.context || {};
+  const selectedCountry = ctx.country || "";
+  const stateOptions = STATE_OPTIONS[selectedCountry] || [];
+  const inferredSector = inferSectorFromIndustryText(ctx.industry || "");
+  const chosenSector = ctx.industrySector || inferredSector || "";
+  if (inferredSector && !ctx.industrySector) ctx.industrySector = inferredSector;
+  if (!Array.isArray(ctx.applicableFrameworks)) ctx.applicableFrameworks = [];
+  const frameworks = getApplicableFrameworks(ctx);
+  const aiEnabled = aiFeaturesEnabled();
+  const aiReady = !!(aiFeaturesEnabled() && aiProviderReady());
+  const frameworkSuggestions = aiEnabled ? (ctx.frameworkSuggestions && ctx.frameworkSuggestions.length ? ctx.frameworkSuggestions : baseFrameworksForContext(ctx)) : [];
+  const sectionInsight = assessment.data.sectionInsights[section.id] || null;
+  const sectionInsightView = sectionInsight || heuristicSectionInsights(assessment, section);
+
+  root.innerHTML = `
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(section.title)}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div></div>
+    ${section.fields.map((f) => {
+      const val = assessment.data.context[f.key] || "";
+      if (f.type === "geo_reg_scope") {
+        return `
+          <div class="question question-focus">
+            <h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3>
+            <label>Country
+              <select data-field="country">
+                <option value="">Select country</option>
+                ${COUNTRY_OPTIONS.map((c) => `<option value="${escapeHtml(c)}" ${selectedCountry === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}
+              </select>
+            </label>
+            ${stateOptions.length ? `
+              <label>State / Province
+                <select data-field="stateProvince">
+                  <option value="">Select state/province</option>
+                  ${stateOptions.map((s) => `<option value="${escapeHtml(s)}" ${ctx.stateProvince === s ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+                </select>
+              </label>` :
+              `<label>Region / Province (optional)
+                <input type="text" data-field="stateProvince" value="${escapeHtml(ctx.stateProvince || "")}" placeholder="Enter state/province/region if relevant" />
+              </label>`
+            }
+            <label>Industry sector (ISIC aligned)
+              <input data-field="industrySector" list="isicSectorOptions" value="${escapeHtml(chosenSector)}" placeholder="Search and select an industry sector" />
+            </label>
+            <datalist id="isicSectorOptions">${ISIC_SECTORS.map((s) => `<option value="${escapeHtml(s)}"></option>`).join("")}</datalist>
+            ${inferredSector ? `<p class="hint">Suggested from industry description: <strong>${escapeHtml(inferredSector)}</strong></p>` : `<p class="hint">Enter your industry above to receive a suggested sector.</p>`}
+
+            ${aiEnabled ? `
+              <div class="evidence">
+                <strong>Applicable legal/regulatory frameworks</strong>
+                <p class="hint">AI mode is enabled. Generate and select frameworks relevant to your geography and sector.</p>
+                <div class="actions">
+                  <button class="btn secondary small" type="button" id="genFrameworksBtn" ${aiReady ? "" : "disabled"}>${aiReady ? "Generate with AI" : "Add provider credentials to generate"}</button>
+                  <button class="btn ghost small" type="button" id="applyBaseFrameworksBtn">Use Baseline Suggestions</button>
+                </div>
+                <div style="margin-top:0.55rem;">
+                  ${frameworkSuggestions.map((name) => `
+                    <label style="display:flex; align-items:center; gap:0.45rem; margin-bottom:0.32rem;">
+                      <input type="checkbox" data-framework-option="${escapeHtml(name)}" ${frameworks.includes(name) ? "checked" : ""} />
+                      <span>${escapeHtml(name)}</span>
+                    </label>
+                  `).join("") || `<p class="hint">No suggestions yet. Generate using AI or use baseline suggestions.</p>`}
+                </div>
+                <div class="row" style="margin-top:0.45rem;">
+                  <input type="text" id="customFrameworkInput" placeholder="Add your own framework" />
+                  <button class="btn secondary small" type="button" id="addCustomFrameworkBtn">Add More</button>
+                </div>
+                <p class="hint">Selected: ${frameworks.length ? escapeHtml(frameworks.join("; ")) : "None selected yet."}</p>
+              </div>
+            ` : `
+              <div class="evidence">
+                <strong>Applicable legal/regulatory frameworks</strong>
+                <p class="hint">AI mode is disabled. Enter frameworks manually for your geography and industry.</p>
+                <textarea data-field="applicableFrameworksManual" placeholder="Example: EU AI Act, GDPR, NIST AI RMF, sector-specific regulator guidance.">${escapeHtml(ctx.applicableFrameworksManual || "")}</textarea>
+              </div>
+            `}
+          </div>
+        `;
+      }
+      if (f.type === "textarea") return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><textarea data-field="${f.key}" placeholder="${escapeHtml(f.starter || "Provide response")}">${escapeHtml(val)}</textarea></div>`;
+      if (f.type === "select") return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><select data-field="${f.key}">${f.options.map((o) => `<option value="${escapeHtml(o)}" ${val === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select></div>`;
+      return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><input type="${f.type}" data-field="${f.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(f.starter || "Provide response")}" /></div>`;
+    }).join("")}
+    <div class="question question-insight">
+      <h3>🧠 Section Improvement Loop</h3>
+      <p class="hint">Generate targeted improvement guidance for this section.</p>
+      <button class="btn secondary small" type="button" id="genSectionInsightsBtn">${aiReady ? "Generate with AI" : "Generate Insights"}</button>
+      ${sectionInsightView ? `
+        <p class="hint"><strong>Generated:</strong> ${escapeHtml(new Date(sectionInsightView.updatedAt).toLocaleString())} (${escapeHtml(sectionInsightView.source || "heuristic")})</p>
+        <p class="hint"><strong>Top 3 weaknesses</strong></p>
+        <ul class="evidence-list">${(sectionInsightView.topWeaknesses || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+        <p class="hint"><strong>Quick wins</strong></p>
+        <ul class="evidence-list">${(sectionInsightView.quickWins || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+        <p class="hint"><strong>Questions to ask stakeholders next</strong></p>
+        <ul class="evidence-list">${(sectionInsightView.nextQuestions || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+      ` : `<p class="hint">No section guidance generated yet.</p>`}
+    </div>
+    ${renderNav(assessment)}
+  `;
+
+  root.querySelectorAll("[data-field]").forEach((el) => {
+    const eventName = el.tagName === "SELECT" ? "change" : "input";
+    el.addEventListener(eventName, (e) => {
+      assessment.data.context[e.target.dataset.field] = e.target.value;
+      if (e.target.dataset.field === "country") {
+        const selected = e.target.value;
+        const states = STATE_OPTIONS[selected] || [];
+        if (!states.includes(assessment.data.context.stateProvince || "")) assessment.data.context.stateProvince = "";
+      }
+      if (e.target.dataset.field === "industry" && !assessment.data.context.industrySector) {
+        const inferred = inferSectorFromIndustryText(e.target.value);
+        if (inferred) assessment.data.context.industrySector = inferred;
+      }
+      scheduleAssessmentSave(assessment);
+      if (["country", "industry", "industrySector"].includes(e.target.dataset.field)) renderContext(assessment, section);
+    });
+  });
+
+  root.querySelectorAll("[data-framework-option]").forEach((box) => {
+    box.addEventListener("change", (e) => {
+      const name = e.target.dataset.frameworkOption;
+      const cur = new Set(getApplicableFrameworks(assessment.data.context));
+      if (e.target.checked) cur.add(name);
+      else cur.delete(name);
+      assessment.data.context.applicableFrameworks = Array.from(cur);
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      renderContext(assessment, section);
+    });
+  });
+
+  document.getElementById("applyBaseFrameworksBtn")?.addEventListener("click", () => {
+    assessment.data.context.frameworkSuggestions = baseFrameworksForContext(assessment.data.context);
+    assessment.data.context.applicableFrameworks = Array.from(new Set((assessment.data.context.applicableFrameworks || []).concat(assessment.data.context.frameworkSuggestions)));
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+    renderContext(assessment, section);
+  });
+
+  document.getElementById("genFrameworksBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("genFrameworksBtn");
+    btn.disabled = true;
+    btn.textContent = "Generating...";
+    try {
+      const generated = await generateFrameworksWithAi(assessment.data.context);
+      assessment.data.context.frameworkSuggestions = generated;
+      assessment.data.context.applicableFrameworks = Array.from(new Set((assessment.data.context.applicableFrameworks || []).concat(generated)));
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      toast("Framework suggestions generated.");
+      renderContext(assessment, section);
+    } catch (err) {
+      toast(err.message || "Could not generate frameworks.");
+      btn.disabled = false;
+      btn.textContent = "Generate with AI";
+    }
+  });
+
+  document.getElementById("addCustomFrameworkBtn")?.addEventListener("click", () => {
+    const input = document.getElementById("customFrameworkInput");
+    const value = (input.value || "").trim();
+    if (!value) return;
+    const cur = new Set(getApplicableFrameworks(assessment.data.context));
+    cur.add(value);
+    assessment.data.context.applicableFrameworks = Array.from(cur);
+    input.value = "";
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+    renderContext(assessment, section);
+  });
+  document.getElementById("genSectionInsightsBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("genSectionInsightsBtn");
+    btn.disabled = true;
+    btn.textContent = "Generating...";
+    const insights = await generateSectionInsights(assessment, section);
+    assessment.data.sectionInsights[section.id] = insights;
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+    renderContext(assessment, section);
+    toast(`Section insights generated (${insights.source}).`);
+  });
+  bindNav(assessment);
+}
+
+function delegationsForSection(assessment, section) {
+  const all = allDelegationBatches(assessment);
+  const ids = new Set(section.controls.map((c) => c.id));
+  return all
+    .map((b) => ({ ...b, controls: b.controls.filter((c) => ids.has(c.id)) }))
+    .filter((b) => b.controls.length > 0);
+}
+
+function delegationQuestions(control, assessment = null, role = "CONTRIBUTOR") {
+  const list = [
+    control.prompt,
+    "What evidence demonstrates this control is designed and operating effectively?",
+    "What gaps, exceptions, or risks remain and what remediation is planned?"
+  ];
+  list.push(...roleSpecificQuestions(role, control));
+  if (assessment) {
+    const c = assessment.data.context || {};
+    const frameworks = getApplicableFrameworks(c);
+    const region = [c.country, c.stateProvince].filter(Boolean).join(", ");
+    if (frameworks.length || region || c.industrySector) {
+      list.push(`How does this control address ${[region, c.industrySector, frameworks.slice(0, 2).join(" / ")].filter(Boolean).join(" | ")} requirements?`);
+    }
+  }
+  return list;
+}
+
+function renderControls(assessment, section) {
+  const root = document.getElementById("wizardSection");
+  const batches = delegationsForSection(assessment, section);
+  const delegateOpen = !!(state.ui.delegateOpen && state.ui.delegateOpen[section.id]);
+  const mode = assessmentMode();
+  const aiWarning = mode === "advanced" ? aiDisabledReason() : "";
+  const sectionControlIds = new Set(section.controls.map((c) => c.id));
+  const sectionFindings = detectAnalysisFindings(assessment).filter((f) => f.controlId && sectionControlIds.has(f.controlId));
+  const sectionInsight = assessment.data.sectionInsights[section.id] || null;
+  const sectionInsightView = sectionInsight || heuristicSectionInsights(assessment, section);
+
+  root.innerHTML = `
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(section.title)}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div></div>
+
+    ${sectionFindings.length ? `<div class="question question-alert">
+      <h3>⚠ Consistency and Dependency Findings</h3>
+      <p class="hint">Potential contradictions or dependency risks detected in this section.</p>
+      <ul class="evidence-list">
+        ${sectionFindings.map((f) => `<li><span class="tag ${f.severity === "High" ? "no" : "ok"}">${escapeHtml(f.severity)}</span> <strong>${escapeHtml(getControl(f.controlId)?.control || f.controlId)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}
+      </ul>
+    </div>` : ""}
+
+    ${delegateOpen ? `<div class="question question-delegate">
+      <h3>📨 Delegate Questions for This Section</h3>
+      <p class="hint">Select controls, choose delegate role, and create a draft email in your default email client.</p>
+      <div class="row">
+        <input id="delegateName" type="text" placeholder="Delegate name" />
+        <input id="delegateTitle" type="text" placeholder="Delegate title" />
+      </div>
+      <div class="row" style="margin-top:0.55rem;">
+        <input id="delegateEmail" type="email" placeholder="delegate@company.com" />
+        <select id="delegateRole">
+          <option value="CONTRIBUTOR">Contributor</option>
+          <option value="REVIEWER">Reviewer</option>
+          <option value="CISO">CISO</option>
+          <option value="CRO">CRO / Risk Lead</option>
+          <option value="LEGAL">Legal Counsel</option>
+          <option value="DPO">Data Protection Officer</option>
+          <option value="COMPLIANCE">Compliance Lead</option>
+          <option value="AI_ENGINEERING">AI Engineering Lead</option>
+        </select>
+      </div>
+      <div style="margin-top:0.55rem;"><input id="delegateIntro" type="text" placeholder="Optional context message" /></div>
+      <div style="margin-top:0.65rem;">${section.controls.map((c) => `<label style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.35rem;"><input type="checkbox" data-delegate-control="${c.id}" /><span><strong>${escapeHtml(c.control)}</strong> <span class="hint">(${escapeHtml(c.clause)})</span></span></label>`).join("")}</div>
+      <button class="btn warn small" id="sendDelegationBtn" style="margin-top:0.6rem;">Create Delegation Draft</button>
+    </div>` : ""}
+
+    ${aiWarning ? `<div class="question question-alert"><p class="hint"><strong>AI currently unavailable:</strong> ${escapeHtml(aiWarning)}</p></div>` : ""}
+
+    ${batches.length ? `<div class="question"><h3>📬 Delegated Requests</h3>${batches.map((b) => {
+      const status = `${b.status || "SENT"}`.toUpperCase();
+      const statusTone = status === "CLOSED" ? "ok" : status === "RESPONDED" ? "warn" : "info";
+      return `
+      <div class="roadmap-row delegate-row">
+        <p><strong>Delegated to:</strong> ${escapeHtml(b.name || b.email)} (${escapeHtml(b.title || "")})</p>
+        <p><strong>Email:</strong> ${escapeHtml(b.email)} | <strong>Role:</strong> ${escapeHtml(b.role || "CONTRIBUTOR")} | <strong>Date:</strong> ${escapeHtml(new Date(b.delegatedAt || Date.now()).toLocaleString())} | <strong>Status:</strong> <span class="tag ${statusTone}">${escapeHtml(status)}</span></p>
+        <p><strong>Controls:</strong> ${escapeHtml(b.controls.map((c) => c.control).join("; "))}</p>
+        <button class="btn secondary small" data-upload-toggle="${escapeHtml(b.delegationId)}">Upload Responses</button>
+        <div style="display:${state.ui.uploadOpen[b.delegationId] ? "block" : "none"}; margin-top:0.6rem;" id="upload-${escapeHtml(b.delegationId)}">
+          ${b.controls.map((c) => {
+            const ev = ensureEvidence(assessment, c.id);
+            const analyses = (ev.delegateAnalysis || []).filter((x) => x.delegationId === b.delegationId);
+            return `<div class="question"><h3>${escapeHtml(c.control)}</h3><p class="hint">${delegationQuestions(c, assessment, b.role || "CONTRIBUTOR").map((q, i) => `${i + 1}. ${escapeHtml(q)}`).join("<br>")}</p><textarea data-response-text="${escapeHtml(b.delegationId)}:${c.id}" placeholder="Paste delegate response here"></textarea>${analyses.length ? `<div class="evidence"><strong>Delegate AI Analysis History</strong><ul class="evidence-list">${analyses.map((a) => `<li><strong>${escapeHtml(new Date(a.analyzedAt).toLocaleString())}</strong> [${escapeHtml(a.role || "CONTRIBUTOR")}]: ${escapeHtml(a.summary)}</li>`).join("")}</ul></div>` : ""}</div>`;
+          }).join("")}
+          <input type="file" data-response-files="${escapeHtml(b.delegationId)}" multiple />
+          <button class="btn primary small" data-submit-responses="${escapeHtml(b.delegationId)}">Apply Responses and Attach Documents</button>
+        </div>
+      </div>
+    `; }).join("")}</div>` : ""}
+
+    ${section.controls.map((c) => {
+      const score = Number(assessment.data.ratings[c.id] || 0);
+      const ev = ensureEvidence(assessment, c.id);
+      const ai = ensureAiInsight(assessment, c.id);
+      const fb = ratingFeedback(score);
+      const tone = statusToneFromScore(score);
+      const regMap = regulatoryMappingForControl(c, assessment.data.context || {});
+      const explain = ai.interpretStructured ? explainabilityDetails(assessment, c, ai.interpretStructured) : null;
+      const eq = evidenceQualityMetrics(ev);
+      const latestDelegateAnalysis = (ev.delegateAnalysis || []).slice().sort((a, b) => `${b.analyzedAt || ""}`.localeCompare(`${a.analyzedAt || ""}`))[0];
+      const latestDelegation = (assessment.data.delegates[c.id] || []).slice().sort((a, b) => `${b.delegatedAt}`.localeCompare(`${a.delegatedAt}`))[0];
+      return `
+        <div class="question control-card ${tone}">
+          <h3>${escapeHtml(c.control)}</h3>
+          <p class="hint">${escapeHtml(c.prompt)}</p>
+          ${personalizedControlHint(assessment, c) ? `<p class="hint"><strong>Personalized focus:</strong> ${escapeHtml(personalizedControlHint(assessment, c))}</p>` : ""}
+          <div class="control-meta">
+            <span class="tag">${escapeHtml(c.clause)}</span>
+            <span class="tag">Weight ${c.weight}</span>
+            <span class="tag ${tone}">${complianceStatus(score)}</span>
+            ${latestDelegation ? `<span class="tag">Delegated to ${escapeHtml(latestDelegation.name || latestDelegation.email)} on ${escapeHtml(new Date(latestDelegation.delegatedAt).toLocaleDateString())}</span>` : ""}
+          </div>
+          ${mode === "advanced"
+            ? `<div class="score-row">${[0.5,1,1.5,2,2.5,3,3.5,4,4.5,5].map((v) => `<button type="button" class="score-chip ${Number(score) === v ? "active" : ""}" data-score="${v}" data-control="${c.id}">${v.toFixed(1)}</button>`).join("")}</div>`
+            : `<div class="star-row">${[1,2,3,4,5].map((i) => `<button type="button" class="star ${i <= Math.round(score) ? "filled" : ""}" data-score="${i}" data-control="${c.id}">★</button>`).join("")}</div>`
+          }
+          <div class="feedback ${fb.cls}">${fb.text}</div>
+          <p class="hint">${mode === "advanced" ? "Advanced mode scoring: 0.5 increments for nuanced maturity." : "Simple mode scoring: whole-number 1-5 assessment."}</p>
+
+          <div class="control-actions">
+            <button class="btn ghost small" type="button" data-example-toggle="${c.id}">Show Best Practice Example</button>
+            ${mode === "advanced" ? `
+              <button class="btn secondary small" type="button" data-ai-action="${c.id}:interpret">AI Interpret Response</button>
+              <button class="btn secondary small" type="button" data-ai-action="${c.id}:example">AI Generate Relevant Example</button>
+            ` : ""}
+          </div>
+          <div class="hint" id="example-${c.id}" style="display:none; margin-top:0.4rem;"><strong>Example:</strong> ${escapeHtml(c.example)}</div>
+          ${mode === "advanced" ? `<div class="hint" style="margin-top:0.35rem;"><strong>AI Privacy:</strong> sensitive content is masked before provider request.</div>` : ""}
+          ${mode === "advanced" && ai.interpret ? `<details class="evidence"><summary><strong>AI Interpretation</strong></summary><p class="hint">${escapeHtml(ai.interpret)}</p>${ai.interpretStructured ? `
+            <p class="hint"><strong>Suggested rating:</strong> ${ai.interpretStructured.suggestedRating || 0}/5 | <strong>Confidence:</strong> ${Math.round((ai.interpretStructured.confidence || 0) * 100)}% ${ai.interpretStructured.insufficientEvidence ? `<span class="tag no">Insufficient evidence</span>` : `<span class="tag ok">Evidence appears sufficient</span>`}</p>
+            <div style="margin-top:0.35rem;">
+              <button class="btn secondary small" type="button" data-apply-ai-rating="${c.id}">Apply AI suggested rating</button>
+            </div>
+            <p class="hint"><strong>Key gaps:</strong></p>
+            <ul class="evidence-list">${(ai.interpretStructured.gaps || []).length ? ai.interpretStructured.gaps.map((x) => `<li>${escapeHtml(x)}</li>`).join("") : "<li>No major gaps identified.</li>"}</ul>
+            <p class="hint"><strong>Evidence requested:</strong></p>
+            <ul class="evidence-list">${(ai.interpretStructured.evidenceRequested || []).length ? ai.interpretStructured.evidenceRequested.map((x) => `<li>${escapeHtml(x)}</li>`).join("") : "<li>No additional evidence requested.</li>"}</ul>
+            <p class="hint"><strong>Sources used:</strong> ${(ai.interpretStructured.sourcesUsed || []).length ? escapeHtml(ai.interpretStructured.sourcesUsed.join("; ")) : "context and response text"}</p>
+            ${explain ? `<details><summary><strong>Why this recommendation?</strong></summary><p class="hint"><strong>Context used:</strong> ${(explain.contextUsed || []).length ? escapeHtml(explain.contextUsed.join(" | ")) : "None explicit."}</p><p class="hint"><strong>Frameworks considered:</strong> ${escapeHtml((explain.frameworksConsidered || []).join("; "))}</p><p class="hint"><strong>Inferred assumptions:</strong> ${(explain.inferred || []).length ? escapeHtml(explain.inferred.join(" | ")) : "None."}</p><p class="hint"><strong>Control reference:</strong> ${escapeHtml(explain.control)} (${escapeHtml(explain.clause)})</p></details>` : ""}
+          ` : ""}</details>` : ""}
+          ${mode === "advanced" && ai.example ? `<details class="evidence"><summary><strong>AI Relevant Example</strong></summary><p class="hint">${escapeHtml(ai.example)}</p></details>` : ""}
+          <details class="evidence">
+            <summary><strong>Regulatory Mapping</strong></summary>
+            <p class="hint"><strong>Why this matters here:</strong> ${escapeHtml(regMap.why)}</p>
+            <p class="hint"><strong>Likely obligations:</strong></p>
+            <ul class="evidence-list">
+              ${(regMap.obligations || []).length
+                ? regMap.obligations.map((o) => `<li><strong>${escapeHtml(o.framework)}:</strong> ${escapeHtml(o.obligation)}</li>`).join("")
+                : "<li>No frameworks selected yet. Add frameworks in Business Context for tailored mapping.</li>"
+              }
+            </ul>
+            <p class="hint"><strong>Minimum acceptable evidence:</strong></p>
+            <ul class="evidence-list">${(regMap.minimumEvidence || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>
+          </details>
+          ${renderIso42001References(c)}
+
+          <div class="evidence">
+            <strong>Response and Evidence</strong>
+            ${mode === "advanced" ? `<div class="control-actions" style="margin-top:0.45rem;">
+              <button class="btn secondary small" type="button" data-ai-copilot="${c.id}:draft">AI Draft Response</button>
+              <button class="btn secondary small" type="button" data-ai-copilot="${c.id}:improve">AI Improve Response</button>
+              <button class="btn secondary small" type="button" data-ai-copilot="${c.id}:tighten">AI Shorten & Strengthen</button>
+            </div>` : ""}
+            <textarea data-evidence-note="${c.id}" placeholder="${escapeHtml(c.starter)}">${escapeHtml(ev.notes || "")}</textarea>
+            ${mode === "advanced" && ai.copilot ? `<p class="hint"><strong>Copilot:</strong> ${escapeHtml(ai.copilot)}</p>` : ""}
+            ${mode === "advanced"
+              ? `<p class="hint"><strong>Evidence quality:</strong> ${eq.overall100}% (specificity ${eq.specificity}/5, traceability ${eq.traceability}/5, operability ${eq.operability}/5)</p><ul class="evidence-list">${(eq.recommendations || []).slice(0, 3).map((r) => `<li>${escapeHtml(r)}</li>`).join("") || "<li>Evidence quality looks strong.</li>"}</ul>`
+              : `<p class="hint"><strong>Evidence quality:</strong> ${eq.overall5 >= 4 ? "Strong" : eq.overall5 >= 2.8 ? "Moderate" : "Needs improvement"}${eq.recommendations[0] ? ` | Next step: ${escapeHtml(eq.recommendations[0])}` : ""}</p>`
+            }
+            ${mode === "advanced" && latestDelegateAnalysis ? `<div class="evidence"><strong>Latest Delegate AI Analysis</strong><p class="hint"><strong>Role:</strong> ${escapeHtml(latestDelegateAnalysis.role || "CONTRIBUTOR")} | <strong>Mapped control:</strong> ${escapeHtml(latestDelegateAnalysis.mappedControl || c.control)}</p><p class="hint"><strong>Summary:</strong> ${escapeHtml(latestDelegateAnalysis.summary || "")}</p><p class="hint"><strong>Rationale:</strong> ${escapeHtml(latestDelegateAnalysis.mappingRationale || "")}</p>${(latestDelegateAnalysis.extractedEvidence || []).length ? `<ul class="evidence-list">${latestDelegateAnalysis.extractedEvidence.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>` : ""}</div>` : ""}
+            <details class="evidence">
+              <summary><strong>Attachments and Links</strong></summary>
+              <div class="row">
+                <div>
+                  <input type="text" data-link-input="${c.id}" placeholder="Paste supporting URL" />
+                  <button class="btn secondary small" type="button" data-add-link="${c.id}" style="margin-top:0.45rem;">Add Link</button>
+                </div>
+                <div><input type="file" data-file-input="${c.id}" multiple /></div>
+              </div>
+              <ul class="evidence-list">
+                ${(ev.links || []).map((l) => renderEvidenceLinkItem(l.url)).join("")}
+                ${(ev.files || []).map((f) => `<li>${escapeHtml(f.name)} (${Math.max(1, Math.round((f.size || 0) / 1024))} KB)</li>`).join("")}
+              </ul>
+            </details>
+          </div>
+        </div>
+      `;
+    }).join("")}
+
+    <h3>📊 Section Summary</h3>
+    ${section.controls.map((c) => {
+      const score = Number(assessment.data.ratings[c.id] || 0);
+      const status = complianceStatus(score);
+      const tone = statusToneFromScore(score);
+      const key = `${section.id}:${c.id}`;
+      const open = !!state.ui.summaryOpen[key];
+      return `<div class="summary-card ${open ? "open" : ""}"><div class="summary-header" data-summary="${key}"><strong>${escapeHtml(c.control)}</strong><span class="tag ${tone}">${status}</span></div><div class="summary-body"><p><strong>Score:</strong> ${score || "Not scored"}/5</p><p><strong>Best practice:</strong> ${escapeHtml(c.bestPractice)}</p><p><strong>Current response:</strong> ${escapeHtml(ensureEvidence(assessment, c.id).notes || "No response")}</p></div></div>`;
+    }).join("")}
+
+    <div class="question question-insight">
+      <h3>🧠 Section Improvement Loop</h3>
+      <p class="hint">Generate targeted improvement guidance for this section.</p>
+      <button class="btn secondary small" type="button" id="genSectionInsightsBtn">${aiFeaturesEnabled() && aiProviderReady() ? "Generate with AI" : "Generate Insights"}</button>
+      ${sectionInsightView ? `
+        <p class="hint"><strong>Generated:</strong> ${escapeHtml(new Date(sectionInsightView.updatedAt).toLocaleString())} (${escapeHtml(sectionInsightView.source || "heuristic")})</p>
+        <p class="hint"><strong>Top 3 weaknesses</strong></p>
+        <ul class="evidence-list">${(sectionInsightView.topWeaknesses || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+        <p class="hint"><strong>Quick wins</strong></p>
+        <ul class="evidence-list">${(sectionInsightView.quickWins || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+        <p class="hint"><strong>Questions to ask stakeholders next</strong></p>
+        <ul class="evidence-list">${(sectionInsightView.nextQuestions || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
+      ` : `<p class="hint">No section guidance generated yet.</p>`}
+    </div>
+
+    ${renderNav(assessment)}
+  `;
+
+  root.querySelectorAll("[data-score]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const val = Number(e.currentTarget.dataset.score);
+      assessment.data.ratings[e.currentTarget.dataset.control] = assessmentMode() === "advanced" ? val : Math.round(val);
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      renderAssessment(assessment);
+    });
+  });
+
+  root.querySelectorAll("[data-apply-ai-rating]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const controlId = e.currentTarget.dataset.applyAiRating;
+      const ai = ensureAiInsight(assessment, controlId);
+      const suggested = Number(ai?.interpretStructured?.suggestedRating || 0);
+      if (!suggested) return toast("No AI suggested rating available.");
+      assessment.data.ratings[controlId] = assessmentMode() === "advanced"
+        ? Math.round(suggested * 2) / 2
+        : Math.round(suggested);
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      renderAssessment(assessment);
+      toast("Applied AI suggested rating.");
+    });
+  });
+
+  root.querySelectorAll("[data-example-toggle]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = e.currentTarget.dataset.exampleToggle;
+      const target = document.getElementById(`example-${id}`);
+      const shown = target.style.display !== "none";
+      target.style.display = shown ? "none" : "block";
+      e.currentTarget.textContent = shown ? "Show Best Practice Example" : "Hide Example";
+    });
+  });
+
+  root.querySelectorAll("[data-ai-action]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const [controlId, mode] = e.currentTarget.dataset.aiAction.split(":");
+      const control = getControl(controlId);
+      if (!aiFeaturesEnabled()) return toast("AI actions are available in Advanced mode only.");
+      if (!aiProviderReady()) return toast("Add selected provider credentials in AI settings first.");
+      e.currentTarget.disabled = true;
+      e.currentTarget.textContent = "Working...";
+      try {
+        const output = await runOpenAi(mode, control, ensureEvidence(assessment, controlId).notes || "", assessment.data.context || {});
+        const ai = ensureAiInsight(assessment, controlId);
+        if (mode === "interpret") {
+          const parsed = safeJsonParse(output);
+          const structured = normalizeInterpretStructured(parsed, typeof output === "string" ? output : "");
+          ai.interpretStructured = structured;
+          ai.interpret = structured.alignment;
+        } else {
+          ai[mode] = output;
+        }
+        ai.updatedAt = nowIso();
+        assessment.updatedAt = nowIso();
+        saveAssessments();
+        renderAssessment(assessment);
+      } catch (err) {
+        toast(err.message || "AI request failed.");
+        e.currentTarget.disabled = false;
+        e.currentTarget.textContent = mode === "interpret" ? "AI Interpret Response" : "AI Generate Relevant Example";
+      }
+    });
+  });
+
+  root.querySelectorAll("[data-ai-copilot]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const [controlId, action] = e.currentTarget.dataset.aiCopilot.split(":");
+      const control = getControl(controlId);
+      if (!aiFeaturesEnabled()) return toast("AI actions are available in Advanced mode only.");
+      if (!aiProviderReady()) return toast("Add selected provider credentials in AI settings first.");
+      const originalLabel = e.currentTarget.textContent;
+      e.currentTarget.disabled = true;
+      e.currentTarget.textContent = "Working...";
+      try {
+        const ev = ensureEvidence(assessment, controlId);
+        const output = await runOpenAiCopilot(action, control, ev.notes || "", assessment.data.context || {});
+        ev.notes = output;
+        const ai = ensureAiInsight(assessment, controlId);
+        ai.copilot = action === "draft"
+          ? "Draft generated."
+          : action === "improve"
+            ? "Response improved."
+            : "Response shortened and strengthened.";
+        ai.updatedAt = nowIso();
+        assessment.updatedAt = nowIso();
+        saveAssessments();
+        renderAssessment(assessment);
+        toast("AI copilot response applied.");
+      } catch (err) {
+        toast(err.message || "AI copilot failed.");
+        e.currentTarget.disabled = false;
+        e.currentTarget.textContent = originalLabel;
+      }
+    });
+  });
+
+  root.querySelectorAll("[data-evidence-note]").forEach((el) => {
+    el.addEventListener("input", (e) => {
+      ensureEvidence(assessment, e.target.dataset.evidenceNote).notes = e.target.value;
+      scheduleAssessmentSave(assessment);
+    });
+  });
+
+  root.querySelectorAll("[data-add-link]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = e.currentTarget.dataset.addLink;
+      const input = root.querySelector(`[data-link-input='${id}']`);
+      const url = (input.value || "").trim();
+      if (!url) return;
+      const safeUrl = normalizeEvidenceUrl(url);
+      if (!safeUrl) return toast("Enter a valid http(s) URL.");
+      const ev = ensureEvidence(assessment, id);
+      if (!ev.links.find((x) => x.url === safeUrl)) ev.links.push({ url: safeUrl, addedAt: nowIso() });
+      input.value = "";
+      flushAssessmentSave(assessment);
+      renderAssessment(assessment);
+    });
+  });
+
+  root.querySelectorAll("[data-file-input]").forEach((el) => {
+    el.addEventListener("change", (e) => {
+      const id = e.target.dataset.fileInput;
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const ev = ensureEvidence(assessment, id);
+      for (const f of files) ev.files.push({ id: uid("file"), name: f.name, size: f.size, type: f.type || "file", addedAt: nowIso() });
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      renderAssessment(assessment);
+      toast("File metadata attached locally.");
+    });
+  });
+
+  root.querySelectorAll("[data-summary]").forEach((el) => {
+    el.addEventListener("click", (e) => {
+      const key = e.currentTarget.dataset.summary;
+      state.ui.summaryOpen[key] = !state.ui.summaryOpen[key];
+      renderAssessment(assessment);
+    });
+  });
+
+  document.getElementById("sendDelegationBtn")?.addEventListener("click", () => {
+    const name = (document.getElementById("delegateName").value || "").trim();
+    const title = (document.getElementById("delegateTitle").value || "").trim();
+    const email = (document.getElementById("delegateEmail").value || "").trim();
+    const role = (document.getElementById("delegateRole").value || "CONTRIBUTOR").trim();
+    const intro = (document.getElementById("delegateIntro").value || "").trim();
+    const selected = Array.from(root.querySelectorAll("[data-delegate-control]:checked")).map((x) => x.dataset.delegateControl);
+    if (!name || !title || !email) return toast("Delegate name, title, and email are required.");
+    if (!selected.length) return toast("Select at least one control.");
+
+    const delegationId = uid("delegation");
+    const delegatedAt = nowIso();
+    const controls = selected.map((id) => getControl(id)).filter(Boolean);
+    controls.forEach((c) => {
+      if (!assessment.data.delegates[c.id]) assessment.data.delegates[c.id] = [];
+      assessment.data.delegates[c.id].push({ delegationId, name, title, email, role, intro, status: "SENT", delegatedAt });
+    });
+    logDelegationEvent(assessment, delegationId, "SENT", {
+      delegateName: name,
+      delegateTitle: title,
+      delegateEmail: email,
+      role,
+      controlIds: controls.map((c) => c.id)
+    });
+
+    const lines = [
+      `Hello ${name},`,
+      "",
+      `${state.profile.name} (${state.profile.email}) is completing an Align42 ISO 42001 assessment and requires your input.`,
+      "",
+      `Assigned role: ${role}`,
+      "What is required:",
+      "1) Reply to this email.",
+      "2) Write responses under each question heading.",
+      "3) Attach supporting documents and reference them in your answers.",
+      ""
+    ];
+    if (intro) lines.push(`Additional context: ${intro}`, "");
+    lines.push(`Assessment: ${assessment.title}`, "", "Controls and questions:", "");
+    controls.forEach((c) => {
+      lines.push(c.control, "-".repeat(Math.max(8, c.control.length)));
+      delegationQuestions(c, assessment, role).forEach((q, i) => lines.push(`Q${i + 1}. ${q}`));
+      lines.push("");
+    });
+    lines.push(`Please reply to: ${state.profile.email}`);
+
+    draftEmail(email, `Align42 input request: ${assessment.title}`, lines.join("\n"));
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+    renderAssessment(assessment);
+    toast("Delegation draft opened in your email client.");
+  });
+
+  root.querySelectorAll("[data-upload-toggle]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const id = e.currentTarget.dataset.uploadToggle;
+      state.ui.uploadOpen[id] = !state.ui.uploadOpen[id];
+      renderAssessment(assessment);
+    });
+  });
+
+  root.querySelectorAll("[data-submit-responses]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const delegationId = e.currentTarget.dataset.submitResponses;
+      const batch = batches.find((b) => b.delegationId === delegationId);
+      if (!batch) return;
+      let analyzedCount = 0;
+
+      for (const c of batch.controls) {
+        const txt = (root.querySelector(`[data-response-text='${delegationId}:${c.id}']`)?.value || "").trim();
+        if (txt) {
+          const ev = ensureEvidence(assessment, c.id);
+          const stamp = `Delegate response from ${batch.name} (${batch.title}) on ${new Date(batch.delegatedAt).toLocaleString()}:`;
+          ev.notes = `${ev.notes || ""}\n\n${stamp}\n${txt}`.trim();
+          logDelegationEvent(assessment, delegationId, "RESPONDED", { responseText: txt }, c.id);
+          try {
+            const analysis = await runDelegateResponseAi(c, txt, assessment.data.context || {}, batch.role || "CONTRIBUTOR");
+            if (!ev.delegateAnalysis) ev.delegateAnalysis = [];
+            ev.delegateAnalysis.push({
+              id: uid("delegate_ai"),
+              delegationId,
+              role: batch.role || "CONTRIBUTOR",
+              analyzedAt: nowIso(),
+              summary: analysis.summary || "",
+              extractedEvidence: analysis.extractedEvidence || [],
+              mappedControl: analysis.mappedControl || c.control,
+              mappingRationale: analysis.mappingRationale || ""
+            });
+            analyzedCount += 1;
+            logDelegationEvent(assessment, delegationId, "DELEGATE_RESPONSE_ANALYZED", { mappedControl: analysis.mappedControl || c.control }, c.id);
+          } catch (err) {
+            logDelegationEvent(assessment, delegationId, "DELEGATE_RESPONSE_ANALYSIS_FAILED", { error: err.message || "analysis failed" }, c.id);
+          }
+        }
+      }
+
+      const files = Array.from(root.querySelector(`[data-response-files='${delegationId}']`)?.files || []);
+      for (const c of batch.controls) {
+        const ev = ensureEvidence(assessment, c.id);
+        for (const f of files) ev.files.push({ id: uid("file"), name: f.name, size: f.size, type: f.type || "file", addedAt: nowIso(), delegationId });
+      }
+      if (files.length) {
+        logDelegationEvent(assessment, delegationId, "RESPONSE_FILES_ADDED", { fileNames: files.map((f) => f.name) });
+      }
+      updateDelegationStatus(assessment, delegationId, "RESPONDED");
+
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      renderAssessment(assessment);
+      toast(analyzedCount ? `Delegate responses applied. AI analyzed ${analyzedCount} response(s).` : "Delegate responses applied locally.");
+    });
+  });
+
+  document.getElementById("genSectionInsightsBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("genSectionInsightsBtn");
+    btn.disabled = true;
+    btn.textContent = "Generating...";
+    const insights = await generateSectionInsights(assessment, section);
+    assessment.data.sectionInsights[section.id] = insights;
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+    renderAssessment(assessment);
+    toast(`Section insights generated (${insights.source}).`);
+  });
+
+  bindNav(assessment);
+
+  attachDictationButtons(root, "textarea[data-evidence-note]");
+  attachDictationButtons(root, "textarea[data-response-text]");
+}
+
+function controlRows(assessment) {
+  return sections.filter((s) => s.type === "controls").flatMap((s) =>
+    s.controls.map((c) => {
+      const ev = ensureEvidence(assessment, c.id);
+      return {
+        id: c.id,
+        section: s.title,
+        clause: c.clause,
+        weight: c.weight,
+        control: c.control,
+        score: Number(assessment.data.ratings[c.id] || 0),
+        status: complianceStatus(assessment.data.ratings[c.id]),
+        notes: ev.notes || "",
+        links: (ev.links || []).map((x) => x.url || ""),
+        files: (ev.files || []).map((x) => x.name || "")
+      };
+    })
+  );
+}
+
+function controlSectionMap() {
+  const map = {};
+  sections.filter((s) => s.type === "controls").forEach((s) => {
+    s.controls.forEach((c) => { map[c.id] = s.title; });
+  });
+  return map;
+}
+
+function detectAnalysisFindings(assessment) {
+  const findings = [];
+  const sectionByControl = controlSectionMap();
+  const ratings = assessment.data.ratings || {};
+  const evidence = assessment.data.evidence || {};
+  const context = assessment.data.context || {};
+  const frameworks = getApplicableFrameworks(context);
+
+  const addFinding = (severity, type, message, controlId = "") => {
+    findings.push({
+      id: uid("finding"),
+      severity,
+      type,
+      message,
+      controlId,
+      section: controlId ? (sectionByControl[controlId] || "Cross-control") : "Cross-control"
+    });
+  };
+
+  const score = (id) => Number(ratings[id] || 0);
+  const note = (id) => `${(evidence[id] || {}).notes || ""}`.toLowerCase();
+
+  Object.keys(ratings).forEach((controlId) => {
+    const s = score(controlId);
+    const n = note(controlId);
+    if (s >= 4 && /\b(not applicable|not documented|not defined|no policy|no process|none)\b/.test(n)) {
+      addFinding("High", "Contradiction", "High rating conflicts with response text indicating missing or undefined control elements.", controlId);
+    }
+    if (s <= 2 && /\b(formal|approved|implemented|operating effectively|fully)\b/.test(n)) {
+      addFinding("Medium", "Consistency check", "Low rating may be inconsistent with response text that suggests mature implementation.", controlId);
+    }
+  });
+
+  if (score("c5_roles") < 3 && [score("c6_risk_method"), score("c8_validation"), score("c9_monitor")].some((x) => x >= 4)) {
+    addFinding("High", "Dependency gap", "Advanced risk/operations ratings depend on clearer role/accountability definition (Clause 5.3).", "c5_roles");
+  }
+  if (score("c5_policy") < 3 && [score("c6_risk_register"), score("c8_incident"), score("c9_reporting")].some((x) => x >= 4)) {
+    addFinding("High", "Dependency gap", "Strong downstream controls are unlikely without an approved AI policy framework.", "c5_policy");
+  }
+  if (score("c6_risk_method") < 3 && score("c6_risk_register") >= 4) {
+    addFinding("Medium", "Dependency gap", "Risk register appears stronger than the underlying risk assessment methodology.", "c6_risk_method");
+  }
+  if (score("c8_human") < 3 && score("c8_validation") >= 4) {
+    addFinding("Medium", "Dependency gap", "Validation maturity should be paired with explicit human oversight controls.", "c8_human");
+  }
+  if (score("c8_incident") < 3 && score("c9_monitor") >= 4) {
+    addFinding("Medium", "Dependency gap", "Monitoring signals should flow into a robust AI incident process.", "c8_incident");
+  }
+  if (frameworks.length && score("c9_reporting") < 3) {
+    addFinding("Medium", "Regulatory gap", "Selected frameworks imply stronger transparency/reporting obligations than current reporting control maturity.", "c9_reporting");
+  }
+  if ((frameworks.some((f) => /GDPR|AI Act|Privacy|PDPA|PIPEDA|UK GDPR/i.test(f))) && score("c8_data_quality") < 3) {
+    addFinding("High", "Regulatory gap", "Privacy/regulatory frameworks selected but data quality/lineage controls are weak.", "c8_data_quality");
+  }
+
+  const dedup = new Set();
+  return findings.filter((f) => {
+    const key = `${f.type}|${f.message}|${f.controlId}`;
+    if (dedup.has(key)) return false;
+    dedup.add(key);
+    return true;
+  });
+}
+
+const ROADMAP_DEPENDENCY_GRAPH = {
+  c5_policy: [],
+  c5_roles: [],
+  c5_oversight: ["c5_policy", "c5_roles"],
+  c6_risk_method: ["c5_policy"],
+  c6_risk_register: ["c6_risk_method"],
+  c6_change: ["c5_policy", "c6_risk_method"],
+  c6_acceptance: ["c6_risk_method", "c5_roles"],
+  c8_validation: ["c6_risk_method", "c5_policy"],
+  c8_human: ["c5_roles", "c8_validation"],
+  c8_incident: ["c5_policy", "c8_security"],
+  c8_security: ["c5_policy"],
+  c9_monitor: ["c8_validation", "c8_incident"],
+  c9_reporting: ["c9_monitor", "c5_oversight"],
+  c9_review: ["c9_monitor", "c5_oversight"],
+  c10_corrective: ["c8_incident", "c9_monitor"],
+  c10_continuous: ["c9_review", "c10_corrective"]
+};
+
+const ROADMAP_REGULATORY_HOT = new Set(["c5_policy", "c6_risk_method", "c8_data_quality", "c8_validation", "c8_human", "c8_incident", "c9_reporting"]);
+
+function addDays(date, days) {
+  const d = new Date(date.getTime());
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function formatDateShort(date) {
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function parseTargetDateValue(raw, now = new Date()) {
+  const txt = `${raw || ""}`.trim();
+  if (!txt) return null;
+  const q = txt.match(/\bq([1-4])\s*([12]\d{3})\b/i);
+  if (q) {
+    const quarter = Number(q[1]);
+    const year = Number(q[2]);
+    const endMonth = quarter * 3;
+    return new Date(year, endMonth, 0);
+  }
+  const months = txt.match(/(\d+)\s*(month|months|mo)\b/i);
+  if (months) return addDays(now, Number(months[1]) * 30);
+  const years = txt.match(/(\d+)\s*(year|years|yr)\b/i);
+  if (years) return addDays(now, Number(years[1]) * 365);
+  const ukDate = txt.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if (ukDate) {
+    const dd = Number(ukDate[1]);
+    const mm = Number(ukDate[2]);
+    let yy = Number(ukDate[3]);
+    if (yy < 100) yy += 2000;
+    const d = new Date(yy, Math.max(0, mm - 1), dd);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  const parsed = new Date(txt);
+  if (!Number.isNaN(parsed.getTime())) return parsed;
+  return null;
+}
+
+function roadmapScenarioConstraints(assessment) {
+  const scenario = assessment.data.roadmapScenario || "standard";
+  if (scenario === "budget") {
+    return {
+      scenarioLabel: "Budget constrained",
+      maxParallel: 2,
+      paceFactor: 1.15,
+      hardHorizonWeeks: null,
+      notes: "Constraint emphasis: fewer parallel workstreams and lower tooling spend."
+    };
+  }
+  if (scenario === "regulator_6m") {
+    return {
+      scenarioLabel: "Regulator review < 6 months",
+      maxParallel: 4,
+      paceFactor: 0.85,
+      hardHorizonWeeks: 26,
+      notes: "Constraint emphasis: accelerated compliance-evidence delivery before external review."
+    };
+  }
+  return {
+    scenarioLabel: "Standard",
+    maxParallel: 3,
+    paceFactor: 1.0,
+    hardHorizonWeeks: null,
+    notes: "Constraint emphasis: balanced delivery speed and control quality."
+  };
+}
+
+function roadmapHorizon(assessment) {
+  const now = new Date();
+  const targetText = assessment.data.context?.targetDate || "";
+  let targetDate = parseTargetDateValue(targetText, now);
+  if (!targetDate) targetDate = addDays(now, 365);
+  if (targetDate.getTime() <= now.getTime()) targetDate = addDays(now, 56);
+  const weeksRaw = Math.max(8, Math.ceil((targetDate.getTime() - now.getTime()) / (7 * 24 * 60 * 60 * 1000)));
+  return { now, targetDate, targetText: targetText || "12 months", weeksRaw };
+}
+
+function roadmapRows(assessment) {
+  const approach = assessment.data.preferredApproach || "fastest";
+  const scenario = assessment.data.roadmapScenario || "standard";
+  const constraints = roadmapScenarioConstraints(assessment);
+  const dependentsCount = {};
+  Object.keys(ROADMAP_DEPENDENCY_GRAPH).forEach((id) => { dependentsCount[id] = 0; });
+  Object.entries(ROADMAP_DEPENDENCY_GRAPH).forEach(([_id, deps]) => deps.forEach((d) => { dependentsCount[d] = (dependentsCount[d] || 0) + 1; }));
+
+  const rows = controlRows(assessment).map((r) => {
+    const gap = Math.max(0, 5 - r.score);
+    const basePriority = gap >= 3 ? "High" : gap >= 2 ? "Medium" : "Low";
+    const deps = ROADMAP_DEPENDENCY_GRAPH[r.id] || [];
+    const unmetDeps = deps.filter((d) => Number(assessment.data.ratings[d] || 0) < 4);
+    const dependency = deps.length
+      ? `Depends on: ${deps.map((d) => getControl(d)?.control || d).join("; ")}`
+      : "Foundation control with no upstream dependencies";
+    const owner = r.section.includes("Operation")
+      ? "CIO / CISO / AI Engineering Lead"
+      : r.section.includes("Performance")
+        ? "Head of Internal Audit / Risk"
+        : "AI Governance Lead";
+
+    let method = approach === "fastest"
+      ? "Rapid uplift using minimum viable controls, templates, and focused evidence capture."
+      : "Optimal uplift using integrated controls, assurance, training, and tooling automation.";
+    let durationWeeks = approach === "fastest"
+      ? (basePriority === "High" ? 6 : basePriority === "Medium" ? 4 : 3)
+      : (basePriority === "High" ? 12 : basePriority === "Medium" ? 8 : 6);
+    let priority = basePriority;
+
+    if (scenario === "budget") {
+      method = `${method} Budget-constrained variant: prioritize policy/process changes first, defer tooling-heavy automation to later phases.`;
+      durationWeeks = Math.max(2, Math.round(durationWeeks * constraints.paceFactor));
+    }
+    if (scenario === "regulator_6m") {
+      if (ROADMAP_REGULATORY_HOT.has(r.id) && gap >= 1) priority = "High";
+      method = `${method} Regulator <6 months variant: prioritize demonstrable compliance evidence and closure of regulatory-critical controls.`;
+      durationWeeks = Math.max(2, Math.round(durationWeeks * constraints.paceFactor));
+    }
+
+    const criticalPath = priority === "High" || (dependentsCount[r.id] || 0) >= 2 || unmetDeps.length > 0;
+    const riskOfDeferral = priority === "High"
+      ? (scenario === "regulator_6m" ? "High risk of regulatory challenge if deferred." : "High residual risk and potential audit failure if deferred.")
+      : priority === "Medium"
+        ? "Moderate risk of control weakness accumulation if deferred."
+        : "Lower immediate risk, but may slow long-term maturity progression.";
+
+    return {
+      ...r,
+      gap,
+      priority,
+      dependency,
+      dependencyIds: deps,
+      owner,
+      durationWeeks,
+      timeframe: `${durationWeeks} week${durationWeeks === 1 ? "" : "s"}`,
+      method,
+      criticalPath,
+      unmetDependencyCount: unmetDeps.length,
+      riskOfDeferral
+    };
+  });
+
+  return rows.sort((a, b) => {
+    const pri = { High: 3, Medium: 2, Low: 1 };
+    const ap = pri[a.priority] || 0;
+    const bp = pri[b.priority] || 0;
+    if (bp !== ap) return bp - ap;
+    if ((b.criticalPath ? 1 : 0) !== (a.criticalPath ? 1 : 0)) return (b.criticalPath ? 1 : 0) - (a.criticalPath ? 1 : 0);
+    return (b.gap * b.weight) - (a.gap * a.weight);
+  });
+}
+
+function roadmapTimeline(assessment, rows = roadmapRows(assessment)) {
+  const horizon = roadmapHorizon(assessment);
+  const constraints = roadmapScenarioConstraints(assessment);
+  const planningWeeks = Math.max(8, constraints.hardHorizonWeeks ? Math.min(horizon.weeksRaw, constraints.hardHorizonWeeks) : horizon.weeksRaw);
+  const tasks = rows.map((r) => ({ ...r, deps: (r.dependencyIds || []).filter((d) => rows.some((x) => x.id === d)) }));
+  const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+  const unresolved = Object.fromEntries(tasks.map((t) => [t.id, t.deps.length]));
+  const dependents = {};
+  tasks.forEach((t) => { dependents[t.id] = []; });
+  tasks.forEach((t) => t.deps.forEach((d) => { if (dependents[d]) dependents[d].push(t.id); }));
+  const priorityOrder = { High: 3, Medium: 2, Low: 1 };
+  const ready = () => tasks
+    .filter((t) => !t._scheduled && unresolved[t.id] <= 0)
+    .sort((a, b) => {
+      const pri = (priorityOrder[b.priority] || 0) - (priorityOrder[a.priority] || 0);
+      if (pri) return pri;
+      if ((b.criticalPath ? 1 : 0) !== (a.criticalPath ? 1 : 0)) return (b.criticalPath ? 1 : 0) - (a.criticalPath ? 1 : 0);
+      return (b.gap * b.weight) - (a.gap * a.weight);
+    });
+
+  const active = [];
+  let week = 0;
+  while (tasks.some((t) => !t._scheduled || !t._completed)) {
+    const options = ready();
+    while (active.length < constraints.maxParallel && options.length) {
+      const t = options.shift();
+      t._scheduled = true;
+      t.startWeek = week;
+      t.endWeek = week + Math.max(1, t.durationWeeks);
+      active.push(t);
+    }
+
+    if (!active.length) {
+      const stalled = tasks.find((t) => !t._scheduled);
+      if (!stalled) break;
+      stalled._scheduled = true;
+      stalled.startWeek = week;
+      stalled.endWeek = week + Math.max(1, stalled.durationWeeks);
+      active.push(stalled);
+    }
+
+    const nextWeek = Math.min(...active.map((t) => t.endWeek));
+    week = nextWeek;
+    const done = active.filter((t) => t.endWeek <= week);
+    done.forEach((t) => {
+      t._completed = true;
+      (dependents[t.id] || []).forEach((id) => { unresolved[id] = Math.max(0, (unresolved[id] || 0) - 1); });
+    });
+    for (let i = active.length - 1; i >= 0; i--) {
+      if (active[i]._completed) active.splice(i, 1);
+    }
+  }
+
+  const maxEndWeekRaw = Math.max(1, ...tasks.map((t) => t.endWeek || 1));
+  const scale = maxEndWeekRaw > planningWeeks ? planningWeeks / maxEndWeekRaw : 1;
+  const maxEndWeek = Math.max(1, Math.round(maxEndWeekRaw * scale));
+  const timelineItems = tasks.map((t) => {
+    const s = Math.max(0, Math.round((t.startWeek || 0) * scale));
+    const e = Math.max(s + 1, Math.round((t.endWeek || 1) * scale));
+    const startDate = addDays(horizon.now, s * 7);
+    const endDate = addDays(horizon.now, e * 7);
+    return {
+      ...t,
+      startWeekScaled: s,
+      endWeekScaled: e,
+      startDate,
+      endDate,
+      startLabel: formatDateShort(startDate),
+      endLabel: formatDateShort(endDate),
+      onHorizon: e <= planningWeeks
+    };
+  }).sort((a, b) => a.startWeekScaled - b.startWeekScaled || b.weight - a.weight);
+
+  return {
+    items: timelineItems,
+    horizonStart: horizon.now,
+    horizonEnd: addDays(horizon.now, planningWeeks * 7),
+    horizonTargetDate: horizon.targetDate,
+    horizonTargetText: horizon.targetText,
+    planningWeeks,
+    scenarioLabel: constraints.scenarioLabel,
+    constraintNotes: constraints.notes,
+    compressed: scale < 1
+  };
+}
+
+function csvEscape(v) { return `"${`${v ?? ""}`.replaceAll('"', '""')}"`; }
+function download(name, type, content) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function buildRoadmapCanvas(assessment) {
+  const rows = roadmapRows(assessment);
+  const timeline = roadmapTimeline(assessment, rows);
+  const items = timeline.items.slice(0, 10);
+  const score = weightedScorePercent(assessment);
+  const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
+  const scenarioLabel = timeline.scenarioLabel;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1680;
+  canvas.height = 1080;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#f2f7f3";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
+  grad.addColorStop(0, "#0d7f60"); grad.addColorStop(1, "#23ab7d");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, 130);
+  ctx.fillStyle = "#fff";
+  ctx.font = "700 38px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText("Align42 Compliance Readiness Timeline", 54, 64);
+  ctx.font = "600 22px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText(`Approach: ${approachLabel} | Scenario: ${scenarioLabel} | Weighted score: ${score}%`, 54, 96);
+  ctx.font = "500 18px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText(`Horizon: ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)} | Target: ${timeline.horizonTargetText}`, 54, 122);
+
+  const axisLeft = 830;
+  const axisRight = 1600;
+  const axisWidth = axisRight - axisLeft;
+  const axisY = 190;
+  ctx.strokeStyle = "#aec8bd";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(axisLeft, axisY);
+  ctx.lineTo(axisRight, axisY);
+  ctx.stroke();
+  ctx.fillStyle = "#345950";
+  ctx.font = "600 16px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText(formatDateShort(timeline.horizonStart), axisLeft, axisY - 12);
+  const endLabelWidth = ctx.measureText(formatDateShort(timeline.horizonEnd)).width;
+  ctx.fillText(formatDateShort(timeline.horizonEnd), axisRight - endLabelWidth, axisY - 12);
+
+  let y = 250;
+  items.forEach((r, i) => {
+    const pColor = r.priority === "High" ? "#cc3a3a" : r.priority === "Medium" ? "#c18428" : "#2a8d4a";
+    const startX = axisLeft + Math.round((r.startWeekScaled / timeline.planningWeeks) * axisWidth);
+    const endX = axisLeft + Math.round((r.endWeekScaled / timeline.planningWeeks) * axisWidth);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(40, y - 30, 1560, 92);
+    ctx.strokeStyle = "#d0dfd8";
+    ctx.strokeRect(40, y - 30, 1560, 92);
+    ctx.fillStyle = "#18322e";
+    ctx.font = "700 21px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(`${i + 1}. ${r.control}`, 56, y - 2);
+    ctx.font = "500 17px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillStyle = "#5b766f";
+    ctx.fillText(`${r.clause} | Owner: ${r.owner}`, 56, y + 24);
+    ctx.fillText(`${r.startLabel} -> ${r.endLabel} (${r.timeframe})`, 56, y + 46);
+    ctx.fillStyle = "#eef4f1";
+    ctx.fillRect(axisLeft, y + 8, axisWidth, 18);
+    ctx.fillStyle = pColor;
+    ctx.fillRect(startX, y + 8, Math.max(10, endX - startX), 18);
+    ctx.fillStyle = pColor;
+    ctx.font = "700 15px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(`${r.priority}${r.criticalPath ? " | critical path" : ""}`, axisRight + 10, y + 23);
+    y += 102;
+  });
+  ctx.fillStyle = "#4f6b63";
+  ctx.font = "500 15px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText(`Constraint notes: ${timeline.constraintNotes}${timeline.compressed ? " | Timeline compressed to fit selected horizon." : ""}`, 54, canvas.height - 24);
+  return canvas;
+}
+
+function renderFinal(assessment) {
+  const root = document.getElementById("wizardSection");
+  const rows = controlRows(assessment);
+  const findings = detectAnalysisFindings(assessment);
+  const score = weightedScorePercent(assessment);
+  const total = rows.length;
+  const compliant = rows.filter((r) => r.status === "Compliant").length;
+  const nonCompliant = total - compliant;
+  const roadmap = roadmapRows(assessment);
+  const timeline = roadmapTimeline(assessment, roadmap);
+  const strengths = rows
+    .filter((r) => r.status === "Compliant")
+    .sort((a, b) => (b.weight * b.score) - (a.weight * a.score))
+    .slice(0, 4);
+  const urgent = timeline.items.filter((r) => r.priority === "High" || r.criticalPath).slice(0, 6);
+  const criticalFindings = findings.filter((f) => f.severity === "High");
+  const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
+  const horizonSummary = `${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)} (${timeline.planningWeeks} weeks)`;
+  const timelineRows = timeline.items.slice(0, 16);
+  const coveragePercent = total ? Math.round((compliant / total) * 100) : 0;
+  const averageRating = total ? (rows.reduce((sum, r) => sum + Number(r.score || 0), 0) / total).toFixed(1) : "0.0";
+  const readinessBand = score >= 80
+    ? "High readiness"
+    : score >= 60
+      ? "Moderate readiness"
+      : "Foundational uplift required";
+  const constraintNarrative = `${timeline.constraintNotes}${timeline.compressed ? " Timeline has been compressed to fit the selected horizon." : ""}`;
+
+  const reportHtml = () => `
+    <html>
+      <head>
+        <style>
+          body { font-family: "Segoe UI", Arial, sans-serif; color: #1b2f2c; margin: 0; background: #eef4f1; }
+          .page { max-width: 1120px; margin: 0 auto; background: #ffffff; min-height: 100vh; }
+          .hero { background: linear-gradient(90deg, #0d7f60, #22ac7d); color: #fff; padding: 28px 32px; }
+          .hero h1 { margin: 0 0 10px; font-size: 30px; }
+          .hero p { margin: 4px 0; font-size: 15px; }
+          .body { padding: 24px 32px 34px; }
+          h2 { margin: 24px 0 10px; font-size: 20px; color: #0d3a31; }
+          p { line-height: 1.45; }
+          ul { margin-top: 8px; }
+          .kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+          .card { border: 1px solid #d8e7df; border-radius: 12px; padding: 12px; background: #f8fcfa; }
+          .card .label { font-size: 12px; color: #537168; text-transform: uppercase; letter-spacing: 0.03em; }
+          .card .value { font-size: 24px; margin-top: 4px; color: #12332d; font-weight: 700; }
+          .timeline-meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
+          .timeline-axis { display: flex; justify-content: space-between; border-top: 2px solid #b7cec3; margin-top: 12px; padding-top: 8px; color: #48665d; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+          th, td { border: 1px solid #d7e5de; padding: 8px; font-size: 12px; vertical-align: top; }
+          th { background: #eef6f2; text-align: left; }
+        </style>
+      </head>
+      <body>
+        <div class="page">
+          <div class="hero">
+            <h1>Align42 ISO 42001 Readiness Report</h1>
+            <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+            <p><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString())}</p>
+          </div>
+          <div class="body">
+            <h2>Executive Summary</h2>
+            <p>${score >= 80 ? "The organisation has a strong governance baseline and is positioned for targeted remediation to achieve readiness." : score >= 60 ? "The organisation has a workable baseline but requires coordinated uplift across governance, risk, and assurance controls." : "The organisation requires foundational control uplift before ISO 42001 readiness can be demonstrated."}</p>
+            <div class="kpi">
+              <div class="card"><div class="label">Weighted score</div><div class="value">${score}%</div></div>
+              <div class="card"><div class="label">Control coverage</div><div class="value">${coveragePercent}%</div></div>
+              <div class="card"><div class="label">Avg control rating</div><div class="value">${averageRating}/5</div></div>
+              <div class="card"><div class="label">Readiness band</div><div class="value" style="font-size:18px;">${escapeHtml(readinessBand)}</div></div>
+            </div>
+
+            <h2>Strengths</h2>
+            ${strengths.length ? `<ul>${strengths.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.clause)}) - score ${r.score}/5</li>`).join("")}</ul>` : "<p>No high-confidence strengths identified yet.</p>"}
+
+            <h2>Critical Findings</h2>
+            ${criticalFindings.length ? `<ul>${criticalFindings.map((f) => `<li><strong>${escapeHtml(f.type)}</strong>${f.controlId ? ` (${escapeHtml(getControl(f.controlId)?.control || f.controlId)})` : ""}: ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
+
+            <h2>Timeline Roadmap</h2>
+            <div class="timeline-meta">
+              <div class="card"><div class="label">Approach</div><div class="value" style="font-size:16px;">${escapeHtml(approachLabel)}</div></div>
+              <div class="card"><div class="label">Scenario</div><div class="value" style="font-size:16px;">${escapeHtml(timeline.scenarioLabel)}</div></div>
+              <div class="card"><div class="label">Target input</div><div class="value" style="font-size:16px;">${escapeHtml(timeline.horizonTargetText)}</div></div>
+            </div>
+            <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)}</p>
+            <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+            <div class="timeline-axis">
+              <div>${escapeHtml(formatDateShort(timeline.horizonStart))}<br>Start</div>
+              <div>${escapeHtml(formatDateShort(addDays(timeline.horizonStart, Math.floor((timeline.planningWeeks * 7) / 2))))}<br>Midpoint</div>
+              <div>${escapeHtml(formatDateShort(timeline.horizonEnd))}<br>Horizon end</div>
+            </div>
+            <table>
+              <tr><th>#</th><th>Control</th><th>Priority</th><th>Owner</th><th>Start</th><th>Finish</th><th>Duration</th><th>Dependencies</th></tr>
+              ${timelineRows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.control)}</td><td>${escapeHtml(r.priority)}${r.criticalPath ? " (critical)" : ""}</td><td>${escapeHtml(r.owner)}</td><td>${escapeHtml(r.startLabel)}</td><td>${escapeHtml(r.endLabel)}</td><td>${escapeHtml(r.timeframe)}</td><td>${escapeHtml(r.dependency)}</td></tr>`).join("")}
+            </table>
+
+            <h2>Detailed Control Results</h2>
+            <table>
+              <tr><th>Section</th><th>Clause</th><th>Control</th><th>Weight</th><th>Score</th><th>Status</th><th>Notes</th></tr>
+              ${rows.map((r) => `<tr><td>${escapeHtml(r.section)}</td><td>${escapeHtml(r.clause)}</td><td>${escapeHtml(r.control)}</td><td>${r.weight}</td><td>${r.score}</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.notes)}</td></tr>`).join("")}
+            </table>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  root.innerHTML = `
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Final Outputs</h2><p class="section-desc">Generate artifacts and finalize readiness actions.</p></div></div>
+
+    <div class="report-grid">
+      <div class="tile"><h3>Overall Weighted Score</h3><p><strong>${score}%</strong></p></div>
+      <div class="tile"><h3>Compliant Controls</h3><p><strong>${compliant}</strong> of ${total}</p></div>
+      <div class="tile"><h3>Non-Compliant Controls</h3><p><strong>${nonCompliant}</strong> of ${total}</p></div>
+      <div class="tile"><h3>Control Coverage</h3><p><strong>${coveragePercent}%</strong></p></div>
+      <div class="tile"><h3>Roadmap Horizon</h3><p><strong>${escapeHtml(horizonSummary)}</strong></p></div>
+      <div class="tile"><h3>Target Horizon Input</h3><p><strong>${escapeHtml(timeline.horizonTargetText)}</strong></p></div>
+      <div class="tile"><h3>Constraint Mode</h3><p><strong>${escapeHtml(timeline.scenarioLabel)}</strong></p></div>
+      <div class="tile"><h3>Readiness Band</h3><p><strong>${escapeHtml(readinessBand)}</strong></p></div>
+    </div>
+
+    <h3>🧭 Executive Summary</h3>
+    <div class="question summary-focus">
+      <p class="hint"><strong>Readiness narrative:</strong> ${score >= 80 ? "High confidence baseline with targeted remediation needed to close remaining gaps." : score >= 60 ? "Moderate baseline; coordinated uplift and clearer evidence are needed before readiness sign-off." : "Foundational uplift required across governance, risk, and operational controls before readiness can be demonstrated."}</p>
+      <p class="hint"><strong>Timeline basis:</strong> Plan is sequenced from <strong>${escapeHtml(formatDateShort(timeline.horizonStart))}</strong> to <strong>${escapeHtml(formatDateShort(timeline.horizonEnd))}</strong>, aligned to your target horizon input of <strong>${escapeHtml(timeline.horizonTargetText)}</strong> and scenario constraints (<strong>${escapeHtml(timeline.scenarioLabel)}</strong>).</p>
+      <p class="hint"><strong>Top strengths:</strong></p>
+      <ul class="evidence-list">${strengths.length ? strengths.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.clause)}) - score ${r.score}/5</li>`).join("") : "<li>No high-confidence strengths identified yet.</li>"}</ul>
+      <p class="hint"><strong>Most urgent actions:</strong></p>
+      <ul class="evidence-list">${urgent.length ? urgent.map((r) => `<li>${escapeHtml(r.control)} - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)} (${escapeHtml(r.timeframe)})</li>`).join("") : "<li>No urgent actions generated yet.</li>"}</ul>
+    </div>
+
+    <h3>⚠ Cross-Control Analysis Findings</h3>
+    <div class="question ${findings.length ? "question-alert" : ""}">
+      ${findings.length ? `<ul class="evidence-list">${findings.map((f) => `<li><span class="tag ${f.severity === "High" ? "no" : "ok"}">${escapeHtml(f.severity)}</span> <strong>${escapeHtml(f.type)}</strong>${f.controlId ? ` (${escapeHtml(getControl(f.controlId)?.control || f.controlId)})` : ""}: ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No contradictions or dependency gaps detected from current responses.</p>"}
+    </div>
+
+    <h3>1) 📊 Summary Dashboard</h3>
+    <div class="actions"><button class="btn secondary" id="downloadDeckBtn">Download summary deck (.ppt)</button></div>
+
+    <h3>2) 📄 Detailed Assessment Report</h3>
+    <div class="actions">
+      <button class="btn secondary" id="downloadPdfBtn">Download PDF</button>
+      <button class="btn secondary" id="downloadDocBtn">Download Word (.doc)</button>
+      <button class="btn secondary" id="downloadCsvBtn">Download CSV</button>
+    </div>
+
+    <h3>3) 🗺 Roadmap Timeline</h3>
+    <div class="question question-focus">
+      <h3>Select implementation approach</h3>
+      <select id="approachSelect">
+        <option value="fastest" ${assessment.data.preferredApproach === "fastest" ? "selected" : ""}>A) Fastest implementation</option>
+        <option value="optimal" ${assessment.data.preferredApproach === "optimal" ? "selected" : ""}>B) Optimal implementation</option>
+      </select>
+      <h3 style="margin-top:0.75rem;">Select roadmap scenario</h3>
+      <select id="scenarioSelect">
+        <option value="standard" ${assessment.data.roadmapScenario === "standard" ? "selected" : ""}>Standard scenario</option>
+        <option value="budget" ${assessment.data.roadmapScenario === "budget" ? "selected" : ""}>Budget constrained</option>
+        <option value="regulator_6m" ${assessment.data.roadmapScenario === "regulator_6m" ? "selected" : ""}>Regulator review in &lt; 6 months</option>
+      </select>
+      <button class="btn primary small" id="refreshRoadmapBtn" style="margin-top:0.6rem;">Refresh Roadmap</button>
+      <p class="hint" style="margin-top:0.5rem;"><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+    </div>
+
+    <div class="timeline-axis">
+      <div class="timeline-axis-point"><span class="k">Start</span><strong>${escapeHtml(formatDateShort(timeline.horizonStart))}</strong></div>
+      <div class="timeline-axis-point"><span class="k">Midpoint</span><strong>${escapeHtml(formatDateShort(addDays(timeline.horizonStart, Math.floor((timeline.planningWeeks * 7) / 2))))}</strong></div>
+      <div class="timeline-axis-point"><span class="k">Horizon End</span><strong>${escapeHtml(formatDateShort(timeline.horizonEnd))}</strong></div>
+    </div>
+
+    <div class="timeline-shell">
+      ${timelineRows.map((r, i) => {
+        const left = Math.max(0, Math.min(96, (r.startWeekScaled / timeline.planningWeeks) * 100));
+        const width = Math.max(4, Math.min(100 - left, ((r.endWeekScaled - r.startWeekScaled) / timeline.planningWeeks) * 100));
+        return `<div class="roadmap-row timeline-row">
+          <p><strong>${i + 1}. ${escapeHtml(r.control)}</strong> <span class="tag ${r.priority === "High" ? "no" : "ok"}">${r.priority}</span> ${r.criticalPath ? `<span class="tag">Critical path</span>` : ""}</p>
+          <p class="timeline-meta-row"><span><strong>Owner:</strong> ${escapeHtml(r.owner)}</span><span><strong>Timeline:</strong> ${escapeHtml(r.startLabel)} -> ${escapeHtml(r.endLabel)} (${escapeHtml(r.timeframe)})</span></p>
+          <div class="timeline-bar"><div class="timeline-fill ${r.priority === "High" ? "high" : r.priority === "Medium" ? "medium" : "low"}" style="left:${left.toFixed(2)}%; width:${width.toFixed(2)}%;"></div></div>
+          <p><strong>Dependency:</strong> ${escapeHtml(r.dependency)}</p>
+          <p><strong>Deferral risk:</strong> ${escapeHtml(r.riskOfDeferral)}</p>
+          <p><strong>Recommended:</strong> ${escapeHtml(r.method)}</p>
+        </div>`;
+      }).join("")}
+    </div>
+
+    <div class="actions">
+      <button class="btn secondary" id="downloadRoadmapPngBtn">Download Roadmap PNG</button>
+      <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPT</button>
+      <button class="btn secondary" id="downloadRoadmapPdfBtn">Download Roadmap PDF</button>
+    </div>
+
+    <div class="nav">
+      <button class="btn ghost" id="prevBtn">Previous</button>
+      <button class="btn primary" id="finishBtn">Finish and Return to Welcome</button>
+    </div>
+  `;
+
+  document.getElementById("approachSelect").addEventListener("change", (e) => {
+    assessment.data.preferredApproach = e.target.value;
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+  });
+  document.getElementById("scenarioSelect").addEventListener("change", (e) => {
+    assessment.data.roadmapScenario = e.target.value;
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+  });
+  document.getElementById("refreshRoadmapBtn").addEventListener("click", () => renderFinal(assessment));
+
+  document.getElementById("downloadDeckBtn").addEventListener("click", () => {
+    const content = `
+      <html><body style="font-family:Segoe UI,Arial,sans-serif; color:#19312c; margin:0;">
+      <div style="padding:22px; background:linear-gradient(90deg,#0d7f60,#22ac7d); color:#fff;">
+        <h1 style="margin:0 0 10px;">Align42 Summary Dashboard</h1>
+        <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+      </div>
+      <div style="padding:22px;">
+        <p><strong>Weighted score:</strong> ${score}% | <strong>Control coverage:</strong> ${coveragePercent}% | <strong>Average rating:</strong> ${averageRating}/5</p>
+        <p><strong>Approach / Scenario:</strong> ${escapeHtml(approachLabel)} / ${escapeHtml(timeline.scenarioLabel)}</p>
+        <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Target:</strong> ${escapeHtml(timeline.horizonTargetText)}</p>
+        <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+        <h2>Top Priorities</h2>
+        <ol>${urgent.length ? urgent.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.priority)}${r.criticalPath ? ", critical path" : ""}) - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)}</li>`).join("") : "<li>No urgent actions generated yet.</li>"}</ol>
+        <h2>Critical Findings</h2>
+        ${criticalFindings.length ? `<ul>${criticalFindings.slice(0, 8).map((f) => `<li>${escapeHtml(f.type)}: ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
+      </div>
+      </body></html>
+    `;
+    download("align42-summary-dashboard.ppt", "application/vnd.ms-powerpoint", content);
+  });
+
+  document.getElementById("downloadCsvBtn").addEventListener("click", () => {
+    const byTimelineId = Object.fromEntries(timeline.items.map((x) => [x.id, x]));
+    const header = ["Section", "Clause", "Control", "Weight", "Score", "Status", "Priority", "Owner", "Start Date", "Finish Date", "Duration Weeks", "Notes", "Links", "Files", "Findings"];
+    const csv = [header.map(csvEscape).join(",")].concat(rows.map((r) => {
+      const control = allControls().find((c) => c.control === r.control && c.clause === r.clause);
+      const controlFindings = findings.filter((f) => f.controlId && control && f.controlId === control.id).map((f) => `[${f.severity}] ${f.type}: ${f.message}`).join(" | ");
+      const tr = control ? byTimelineId[control.id] : null;
+      return [r.section, r.clause, r.control, r.weight, r.score, r.status, tr?.priority || "", tr?.owner || "", tr?.startLabel || "", tr?.endLabel || "", tr?.durationWeeks || "", r.notes, r.links.join(" | "), r.files.join(" | "), controlFindings].map(csvEscape).join(",");
+    })).join("\n");
+    download("align42-detailed-assessment.csv", "text/csv", csv);
+  });
+
+  document.getElementById("downloadDocBtn").addEventListener("click", () => {
+    download("align42-detailed-assessment-report.doc", "application/msword", reportHtml());
+  });
+
+  document.getElementById("downloadPdfBtn").addEventListener("click", () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(reportHtml());
+    w.document.close();
+    w.focus();
+    w.print();
+  });
+
+  document.getElementById("downloadRoadmapPngBtn").addEventListener("click", () => {
+    const canvas = buildRoadmapCanvas(assessment);
+    const a = document.createElement("a");
+    a.href = canvas.toDataURL("image/png");
+    a.download = "align42-roadmap.png";
+    a.click();
+  });
+
+  document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
+    const canvas = buildRoadmapCanvas(assessment);
+    const html = `<html><body><h1>Align42 Timeline Roadmap</h1><img src="${canvas.toDataURL("image/png")}" style="width:100%" /></body></html>`;
+    download("align42-roadmap.ppt", "application/vnd.ms-powerpoint", html);
+  });
+
+  document.getElementById("downloadRoadmapPdfBtn").addEventListener("click", () => {
+    const canvas = buildRoadmapCanvas(assessment);
+    const w = window.open("", "_blank");
+    if (!w) return;
+    w.document.write(`<html><body style="margin:0;"><img src="${canvas.toDataURL("image/png")}" style="width:100%" /></body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  });
+
+  document.getElementById("prevBtn").addEventListener("click", () => {
+    assessment.data.currentSection = Math.max(0, assessment.data.currentSection - 1);
+    flushAssessmentSave(assessment);
+    renderAssessment(assessment);
+  });
+
+  document.getElementById("finishBtn").addEventListener("click", () => {
+    flushAssessmentSave(assessment);
+    state.currentAssessmentId = null;
+    render();
+  });
+}
+
+function renderNav(assessment) {
+  const idx = assessment.data.currentSection;
+  return `
+    <div class="nav">
+      <button class="btn ghost" id="prevBtn" ${idx === 0 ? "disabled" : ""}>Previous</button>
+      <button class="btn primary" id="nextBtn">${idx === sections.length - 1 ? "Finish and Return to Welcome" : "Next"}</button>
+    </div>
+  `;
+}
+
+function bindNav(assessment) {
+  document.getElementById("prevBtn")?.addEventListener("click", () => {
+    assessment.data.currentSection = Math.max(0, assessment.data.currentSection - 1);
+    flushAssessmentSave(assessment);
+    renderAssessment(assessment);
+  });
+  document.getElementById("nextBtn")?.addEventListener("click", () => {
+    if (assessment.data.currentSection === sections.length - 1) {
+      flushAssessmentSave(assessment);
+      state.currentAssessmentId = null;
+      render();
+      return;
+    }
+    assessment.data.currentSection = Math.min(sections.length - 1, assessment.data.currentSection + 1);
+    flushAssessmentSave(assessment);
+    renderAssessment(assessment);
+  });
+}
+
+render();
