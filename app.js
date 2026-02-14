@@ -251,6 +251,19 @@ function ensureSettingsDefaults() {
 }
 ensureSettingsDefaults();
 
+{
+  let changed = false;
+  (state.assessments || []).forEach((a) => {
+    if (!a || !a.data) return;
+    if (a.data.demoMode && (!a.demoMode || !a.isDemo)) {
+      a.demoMode = true;
+      a.isDemo = true;
+      changed = true;
+    }
+  });
+  if (changed) saveAssessments();
+}
+
 function activeAiProvider() {
   const p = `${state.settings?.aiProvider || "openai"}`.toLowerCase();
   return ["openai", "anthropic", "gemini", "azure_openai"].includes(p) ? p : "openai";
@@ -545,6 +558,7 @@ function defaultAssessmentData() {
     context: {},
     ratings: {},
     evidence: {},
+    visitedSections: {},
     delegates: {},
     delegationEvents: [],
     aiInsights: {},
@@ -554,9 +568,86 @@ function defaultAssessmentData() {
   };
 }
 
+function isDemoAssessment(assessment) {
+  return !!assessment?.demoMode || !!assessment?.isDemo || !!assessment?.data?.demoMode;
+}
+
+function demoEvidenceNote(control, score) {
+  if (score <= 1) {
+    return `No formalized ${control.control.toLowerCase()} process exists yet. Activities are ad hoc and dependent on individual teams.`;
+  }
+  if (score <= 2) {
+    return `${control.control} is partially defined with draft procedures, but ownership, repeatability, and assurance evidence are incomplete.`;
+  }
+  return `${control.control} has early documented practice, but broader rollout, measurement, and governance oversight are still maturing.`;
+}
+
+function createSimpleModeDemoAssessment() {
+  const now = new Date();
+  const dd = `${now.getDate()}`.padStart(2, "0");
+  const mm = `${now.getMonth() + 1}`.padStart(2, "0");
+  const yy = `${now.getFullYear()}`.slice(-2);
+  const data = defaultAssessmentData();
+  data.context = {
+    orgName: "Southern Cross Intelligent Systems Pty Ltd",
+    businessOverview: "Australian mid-sized technology manufacturer designing and producing industrial vision sensors, edge-AI controllers, and smart factory monitoring platforms for ANZ and Southeast Asia markets. Core business is B2B hardware-plus-software solutions for manufacturing and logistics clients.",
+    industry: "Technology manufacturing (industrial automation and IoT devices)",
+    size: 840,
+    platforms: "Microsoft 365, Azure, AWS for analytics workloads, SAP Business One, Jira/Confluence, GitHub Enterprise, Power BI, CrowdStrike.",
+    roles: "CIO (enterprise IT and digital delivery), Head of Engineering (product and model development), Risk Manager (enterprise risk), Compliance Manager (regulatory obligations), Legal Counsel (contracts/privacy), Security Lead (cyber controls).",
+    country: "Australia",
+    stateProvince: "Victoria",
+    industrySector: "C: Manufacturing",
+    applicableFrameworks: [
+      "ISO/IEC 42001",
+      "ISO/IEC 23894 (AI risk management)",
+      "Australian Privacy Act",
+      "Australia AI Ethics Principles",
+      "National AI Centre - Guidance for AI Adoption"
+    ],
+    maturityLevel: "Ad hoc",
+    currentUse: "Limited pilots for demand forecasting, visual defect detection, and internal document summarization. No fully standardized model lifecycle or centralized AI governance process.",
+    riskDomains: "Data quality for production telemetry, model drift, prompt/data leakage risk, third-party model dependency, explainability for customer-facing analytics outputs.",
+    aspiration: "Within 18 months, establish a formal AI management system aligned to ISO 42001, expand AI-enabled product features across three product lines, and implement measurable governance, risk, and assurance controls suitable for enterprise customers and regulator scrutiny.",
+    targetDate: "Q3 2027"
+  };
+  data.preferredApproach = "optimal";
+  data.roadmapScenario = "standard";
+  data.demoMode = true;
+
+  const lowMaturityScores = {
+    c4: 2,
+    c5: 2,
+    c6: 1,
+    c7: 2,
+    c8: 1,
+    c9: 1,
+    c10: 1
+  };
+  allControls().forEach((control) => {
+    const prefix = `${control.id}`.split("_")[0];
+    let score = lowMaturityScores[prefix] || 1;
+    if (["c4_scope", "c7_awareness", "c7_comms"].includes(control.id)) score = 3;
+    if (["c8_validation", "c9_reporting", "c10_continuous"].includes(control.id)) score = 2;
+    data.ratings[control.id] = score;
+    data.evidence[control.id] = { notes: demoEvidenceNote(control, score), links: [], files: [] };
+  });
+
+  return {
+    id: uid("asmt"),
+    title: `ISO 42001 Assessment - ${dd}/${mm}/${yy} (Demo)`,
+    demoMode: true,
+    isDemo: true,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    data
+  };
+}
+
 function ensureAssessmentData(assessment) {
   if (!assessment.data) assessment.data = defaultAssessmentData();
   if (!assessment.data.evidence) assessment.data.evidence = {};
+  if (!assessment.data.visitedSections) assessment.data.visitedSections = {};
   if (!assessment.data.delegates) assessment.data.delegates = {};
   if (!assessment.data.delegationEvents) assessment.data.delegationEvents = [];
   if (!assessment.data.aiInsights) assessment.data.aiInsights = {};
@@ -564,6 +655,8 @@ function ensureAssessmentData(assessment) {
   if (!assessment.data.preferredApproach) assessment.data.preferredApproach = "fastest";
   if (!assessment.data.roadmapScenario) assessment.data.roadmapScenario = "standard";
   if (typeof assessment.data.currentSection !== "number") assessment.data.currentSection = 0;
+  if (!assessment.demoMode && assessment.data.demoMode) assessment.demoMode = true;
+  if (!assessment.isDemo && (assessment.demoMode || assessment.data.demoMode)) assessment.isDemo = true;
 }
 
 function logDelegationEvent(assessment, delegationId, eventType, details = {}, controlId = "") {
@@ -1589,7 +1682,10 @@ function renderWelcome() {
   const setupLink = providerSetupLink(provider);
   const preflight = providerPreflightValidation(provider);
   const diagnostics = (state.settings.aiDiagnostics || []).slice().reverse().slice(0, 25);
-  const rows = state.assessments.slice().sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
+  const rows = state.assessments
+    .slice()
+    .filter((a) => !isDemoAssessment(a))
+    .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
   const avgScore = rows.length ? Math.round(rows.reduce((sum, a) => sum + weightedScorePercent(a), 0) / rows.length) : 0;
   const completedCount = rows.filter((a) => completionPercent(a) >= 100).length;
   const inProgressCount = Math.max(0, rows.length - completedCount);
@@ -1597,12 +1693,13 @@ function renderWelcome() {
     <div class="shell">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>Align42</h1><span class="meta-pill">${mode === "advanced" ? "Advanced mode" : "Simple mode"}</span>${mode === "advanced" ? `<span class="meta-pill ${aiMode ? "ok-pill" : ""}">${aiMode ? "AI on" : "AI off"}</span>` : ""}</div>
+          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><span class="meta-pill">${mode === "advanced" ? "Advanced mode" : "Simple mode"}</span>${mode === "advanced" ? `<span class="meta-pill ${aiMode ? "ok-pill" : ""}">${aiMode ? "AI on" : "AI off"}</span>` : ""}</div>
           <p>${escapeHtml(state.profile?.name || "Profile not set")} (${escapeHtml(state.profile?.email || "email not set")})</p>
         </div>
         <div class="actions">
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
           <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
+          ${mode === "simple" ? `<button class="btn secondary" id="demoAssessmentBtn">🧪 Demo Assessment</button>` : ""}
           <button class="btn ghost" id="editProfileBtn">👤 Edit Profile</button>
         </div>
       </header>
@@ -1771,6 +1868,18 @@ function renderWelcome() {
     render();
   });
 
+  document.getElementById("demoAssessmentBtn")?.addEventListener("click", () => {
+    if (!hasProfile) return toast("Set your profile name and email first.");
+    if (assessmentMode() !== "simple") return toast("Demo assessment is available in Simple mode.");
+    const assessment = createSimpleModeDemoAssessment();
+    state.assessments.push(assessment);
+    saveAssessments();
+    state.currentAssessmentId = assessment.id;
+    state.view = "assessment";
+    render();
+    toast("Demo assessment created.");
+  });
+
   document.getElementById("editProfileBtn").addEventListener("click", () => {
     const name = prompt("Name", state.profile?.name || "");
     if (name === null) return;
@@ -1916,6 +2025,12 @@ function renderWelcome() {
 function renderAssessment(assessment) {
   stopDictation();
   const section = sections[assessment.data.currentSection];
+  if (!assessment.data.visitedSections) assessment.data.visitedSections = {};
+  if (!assessment.data.visitedSections[section.id]) {
+    assessment.data.visitedSections[section.id] = true;
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+  }
   const completion = completionPercent(assessment);
   const score = weightedScorePercent(assessment);
   const delegateOpen = !!(state.ui.delegateOpen && state.ui.delegateOpen[section.id]);
@@ -1946,9 +2061,14 @@ function renderAssessment(assessment) {
           <div class="section-progress-list">
             ${sections.map((s, i) => {
               const p = sectionPercent(assessment, s);
+              const visited = !!assessment.data.visitedSections[s.id];
+              const canJump = p >= 100 || visited || i === assessment.data.currentSection;
               const stateClass = p >= 100 ? "done" : p > 0 ? "active" : "todo";
               const currentClass = i === assessment.data.currentSection ? "current" : "";
-              return `<div class="section-progress-item ${stateClass} ${currentClass}"><div class="title"><span>${i + 1}. ${escapeHtml(s.title)}</span><strong>${p}%</strong></div><div class="progress-bar"><div style="width:${p}%"></div></div></div>`;
+              const heading = canJump
+                ? `<span class="section-link">${i + 1}. ${escapeHtml(s.title)}</span>`
+                : `<span class="section-static">${i + 1}. ${escapeHtml(s.title)}</span>`;
+              return `<div class="section-progress-item ${stateClass} ${currentClass} ${canJump ? "jumpable" : ""}" ${canJump ? `data-jump-section="${i}" role="button" tabindex="0" aria-label="Go to ${escapeHtml(s.title)}"` : ""}><div class="title">${heading}<strong>${p}%</strong></div><div class="progress-bar"><div style="width:${p}%"></div></div></div>`;
             }).join("")}
           </div>
           <div class="score-wrap"><div>Weighted alignment score</div><div class="score-pill">${score}%</div></div>
@@ -1989,6 +2109,22 @@ function renderAssessment(assessment) {
     if (!state.ui.delegateOpen) state.ui.delegateOpen = {};
     state.ui.delegateOpen[section.id] = !state.ui.delegateOpen[section.id];
     renderAssessment(assessment);
+  });
+
+  app.querySelectorAll(".section-progress-item[data-jump-section]").forEach((el) => {
+    const jumpToSection = (target) => {
+      const idx = Number(target.dataset.jumpSection);
+      if (!Number.isFinite(idx)) return;
+      assessment.data.currentSection = Math.max(0, Math.min(sections.length - 1, idx));
+      flushAssessmentSave(assessment);
+      renderAssessment(assessment);
+    };
+    el.addEventListener("click", (e) => jumpToSection(e.currentTarget));
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      jumpToSection(e.currentTarget);
+    });
   });
 
   if (section.type === "context") renderContext(assessment, section);
@@ -3112,6 +3248,151 @@ function buildRoadmapCanvas(assessment) {
   return canvas;
 }
 
+function maturityDimensionRows(assessment) {
+  const labelById = {
+    governance: "Context & Leadership",
+    risk: "Planning & Risk",
+    support: "Support",
+    operations: "Operation",
+    evaluation: "Performance Eval",
+    improvement: "Improvement"
+  };
+  return sections
+    .filter((s) => s.type === "controls")
+    .map((s) => {
+      const scores = s.controls.map((c) => Number(assessment.data.ratings[c.id] || 0));
+      const avg = scores.length ? Number((scores.reduce((sum, v) => sum + v, 0) / scores.length).toFixed(1)) : 0;
+      return {
+        id: s.id,
+        label: labelById[s.id] || s.title.replace(/^Clause\s+\d+(?:-\d+)?:\s*/i, ""),
+        value: avg
+      };
+    });
+}
+
+function buildMaturityRadarCanvas(assessment, size = 920) {
+  const dims = maturityDimensionRows(assessment);
+  const n = Math.max(3, dims.length);
+  const threshold = 4 / 5;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = Math.round(size * 0.74);
+  const ctx = canvas.getContext("2d");
+  const cx = canvas.width / 2;
+  const cy = Math.round(canvas.height * 0.45);
+  const radius = Math.min(canvas.width * 0.3, canvas.height * 0.34);
+  const angleAt = (i) => (-Math.PI / 2) + (i * (Math.PI * 2 / n));
+  const pointAt = (i, frac) => {
+    const a = angleAt(i);
+    const r = radius * frac;
+    return { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  };
+  const polygon = (frac) => {
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const p = pointAt(i, frac);
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+  };
+
+  ctx.fillStyle = "#f8fcfa";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const zones = [
+    { frac: 1.0, fill: "rgba(38,143,91,0.10)" },
+    { frac: 0.8, fill: "rgba(211,156,43,0.12)" },
+    { frac: 0.6, fill: "rgba(194,70,70,0.12)" }
+  ];
+  zones.forEach((z) => {
+    polygon(z.frac);
+    ctx.fillStyle = z.fill;
+    ctx.fill();
+  });
+
+  for (let r = 0.2; r <= 1.0; r += 0.2) {
+    polygon(r);
+    ctx.strokeStyle = "#cfdfd8";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  for (let i = 0; i < n; i++) {
+    const p = pointAt(i, 1);
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(p.x, p.y);
+    ctx.strokeStyle = "#d7e6e0";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  polygon(threshold);
+  ctx.strokeStyle = "#1e8753";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.beginPath();
+  dims.forEach((d, i) => {
+    const p = pointAt(i, Math.max(0, Math.min(1, d.value / 5)));
+    if (i === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  });
+  ctx.closePath();
+  ctx.fillStyle = "rgba(13,127,96,0.22)";
+  ctx.fill();
+  ctx.strokeStyle = "#0d7f60";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  dims.forEach((d, i) => {
+    const p = pointAt(i, Math.max(0, Math.min(1, d.value / 5)));
+    const tone = d.value >= 4 ? "#237f4a" : d.value >= 3 ? "#b77724" : "#bd4242";
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = tone;
+    ctx.fill();
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = "#2f4f47";
+  ctx.font = "600 15px 'Avenir Next', 'Segoe UI', sans-serif";
+  dims.forEach((d, i) => {
+    const lp = pointAt(i, 1.14);
+    const a = Math.cos(angleAt(i));
+    ctx.textAlign = a > 0.25 ? "left" : a < -0.25 ? "right" : "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(d.label, lp.x, lp.y);
+    const vp = pointAt(i, 1.02);
+    ctx.fillStyle = "#4f6f65";
+    ctx.font = "500 13px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(`${d.value.toFixed(1)}/5`, vp.x, vp.y);
+    ctx.fillStyle = "#2f4f47";
+    ctx.font = "600 15px 'Avenir Next', 'Segoe UI', sans-serif";
+  });
+
+  const legendY = canvas.height - 28;
+  const chip = (x, color, label) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, legendY - 9, 16, 10);
+    ctx.strokeStyle = "#d3e2db";
+    ctx.strokeRect(x, legendY - 9, 16, 10);
+    ctx.fillStyle = "#385a51";
+    ctx.font = "500 13px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText(label, x + 22, legendY);
+  };
+  chip(36, "rgba(194,70,70,0.45)", "Below expected maturity");
+  chip(300, "rgba(211,156,43,0.45)", "Transitional maturity");
+  chip(520, "rgba(38,143,91,0.45)", "Compliance threshold zone (>=4/5)");
+
+  return canvas;
+}
+
 function renderFinal(assessment) {
   const root = document.getElementById("wizardSection");
   const rows = controlRows(assessment);
@@ -3139,6 +3420,10 @@ function renderFinal(assessment) {
       ? "Moderate readiness"
       : "Foundational uplift required";
   const constraintNarrative = `${timeline.constraintNotes}${timeline.compressed ? " Timeline has been compressed to fit the selected horizon." : ""}`;
+  const isDemoMode = isDemoAssessment(assessment);
+  const isAdvancedMode = assessmentMode() === "advanced";
+  const radarForExport = isAdvancedMode ? buildMaturityRadarCanvas(assessment, 920) : null;
+  const radarDataUrl = radarForExport ? radarForExport.toDataURL("image/png") : "";
 
   const reportHtml = () => `
     <html>
@@ -3180,6 +3465,7 @@ function renderFinal(assessment) {
               <div class="card"><div class="label">Avg control rating</div><div class="value">${averageRating}/5</div></div>
               <div class="card"><div class="label">Readiness band</div><div class="value" style="font-size:18px;">${escapeHtml(readinessBand)}</div></div>
             </div>
+            ${isAdvancedMode ? `<h2>ISO 42001 Maturity Radar</h2><p>Average maturity by ISO 42001 dimension. Green zone indicates the target threshold for compliance readiness (approximately 4.0/5).</p><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:12px;" alt="ISO 42001 maturity radar chart" />` : ""}
 
             <h2>Strengths</h2>
             ${strengths.length ? `<ul>${strengths.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.clause)}) - score ${r.score}/5</li>`).join("")}</ul>` : "<p>No high-confidence strengths identified yet.</p>"}
@@ -3216,6 +3502,86 @@ function renderFinal(assessment) {
     </html>
   `;
 
+  const demoSampleReportHtml = () => `
+    <html>
+      <body style="font-family:Segoe UI,Arial,sans-serif; margin:0; background:#eef5f2; color:#18312c;">
+        <div style="max-width:1040px; margin:0 auto; background:#fff; min-height:100vh;">
+          <div style="background:linear-gradient(90deg,#0d7f60,#23ab7d); color:#fff; padding:24px 28px;">
+            <h1 style="margin:0 0 8px;">Align42 Demo Sample Report</h1>
+            <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+          </div>
+          <div style="padding:22px 28px;">
+            <h2>Sample Executive Summary</h2>
+            <p>This sample report demonstrates a low-maturity/high-ambition scenario for a mid-sized Australian technology manufacturer. The current control baseline is early-stage, while strategic ambition requires rapid formalization of governance, risk, and operational assurance controls.</p>
+            <ul>
+              <li><strong>Current weighted readiness:</strong> ${score}%</li>
+              <li><strong>Control coverage:</strong> ${coveragePercent}%</li>
+              <li><strong>Average control rating:</strong> ${averageRating}/5</li>
+              <li><strong>Readiness profile:</strong> Low baseline with high uplift potential</li>
+            </ul>
+            <h2>Sample Priority Themes</h2>
+            <ol>
+              <li>Establish formal AI policy, scope, and role accountability model.</li>
+              <li>Implement repeatable AI risk assessment and risk register governance.</li>
+              <li>Strengthen model validation, data quality lineage, and incident response controls.</li>
+              <li>Embed monitoring, internal audit coverage, and management review cadence.</li>
+            </ol>
+            <h2>Sample Outcome Statement</h2>
+            <p>If executed as planned, the organisation can progress from ad hoc to defined-and-managed maturity with evidence suitable for ISO 42001 readiness activities and stakeholder assurance conversations.</p>
+            <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample deliverable generated for demonstration mode and should be tailored before real use.</em></p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const demoSampleRoadmapHtml = () => `
+    <html>
+      <body style="font-family:Segoe UI,Arial,sans-serif; margin:0; color:#17322d; background:#f1f7f3;">
+        <div style="max-width:1160px; margin:0 auto; background:#fff; min-height:100vh;">
+          <div style="background:linear-gradient(90deg,#0d7f60,#23ab7d); color:#fff; padding:24px 30px;">
+            <h1 style="margin:0 0 8px;">Align42 Demo Sample Roadmap</h1>
+            <p style="margin:0;"><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+          </div>
+          <div style="padding:22px 30px;">
+            <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
+            <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+              <tr>
+                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Phase</th>
+                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Window</th>
+                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Focus</th>
+                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Expected Evidence</th>
+              </tr>
+              <tr>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Phase 1 - Foundation</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Weeks 1-8</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Scope, policy framework, governance forum, role accountability</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Approved policy pack, scope register, governance charter, RACI</td>
+              </tr>
+              <tr>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Phase 2 - Risk and Operations</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Weeks 9-20</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Risk method, risk register, model validation, data lineage, oversight controls</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Risk records, validation templates, oversight logs, incident playbooks</td>
+              </tr>
+              <tr>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Phase 3 - Assurance and Improvement</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Weeks 21+</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">Monitoring, reporting, internal audit, corrective actions, continual improvement</td>
+                <td style="border:1px solid #d6e5dd; padding:8px;">KPI dashboards, management reviews, audit findings, CAPA evidence</td>
+              </tr>
+            </table>
+            <h2 style="margin-top:18px;">Sample Timeline Snapshot</h2>
+            <ul>
+              ${timelineRows.slice(0, 8).map((r) => `<li><strong>${escapeHtml(r.control)}</strong> (${escapeHtml(r.priority)}) - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)}</li>`).join("")}
+            </ul>
+            <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample roadmap output for demonstration mode and should be adapted to live evidence and delivery constraints.</em></p>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
   root.innerHTML = `
     <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Final Outputs</h2><p class="section-desc">Generate artifacts and finalize readiness actions.</p></div></div>
 
@@ -3229,6 +3595,12 @@ function renderFinal(assessment) {
       <div class="tile"><h3>Constraint Mode</h3><p><strong>${escapeHtml(timeline.scenarioLabel)}</strong></p></div>
       <div class="tile"><h3>Readiness Band</h3><p><strong>${escapeHtml(readinessBand)}</strong></p></div>
     </div>
+    ${isAdvancedMode ? `
+    <h3>🕸 ISO 42001 Maturity Radar</h3>
+    <div class="question radar-wrap">
+      <p class="hint">Average maturity by ISO 42001 dimension. Green zone indicates the target threshold for compliance readiness (around 4.0/5).</p>
+      <canvas id="maturityRadarCanvas"></canvas>
+    </div>` : ""}
 
     <h3>🧭 Executive Summary</h3>
     <div class="question summary-focus">
@@ -3254,6 +3626,14 @@ function renderFinal(assessment) {
       <button class="btn secondary" id="downloadDocBtn">Download Word (.doc)</button>
       <button class="btn secondary" id="downloadCsvBtn">Download CSV</button>
     </div>
+    ${isDemoMode ? `<div class="question question-focus">
+      <h3>Demo Sample Deliverables</h3>
+      <p class="hint">Use these sample outputs to illustrate report and roadmap structure before tailoring a live assessment deliverable.</p>
+      <div class="actions">
+        <button class="btn secondary" id="downloadDemoReportBtn">Download Sample Report (.doc)</button>
+        <button class="btn secondary" id="downloadDemoRoadmapBtn">Download Sample Roadmap (.ppt)</button>
+      </div>
+    </div>` : ""}
 
     <h3>3) 🗺 Roadmap Timeline</h3>
     <div class="question question-focus">
@@ -3316,6 +3696,16 @@ function renderFinal(assessment) {
     saveAssessments();
   });
   document.getElementById("refreshRoadmapBtn").addEventListener("click", () => renderFinal(assessment));
+  if (isAdvancedMode) {
+    const host = document.getElementById("maturityRadarCanvas");
+    if (host) {
+      const built = buildMaturityRadarCanvas(assessment, 920);
+      host.width = built.width;
+      host.height = built.height;
+      const ctx = host.getContext("2d");
+      ctx.drawImage(built, 0, 0);
+    }
+  }
 
   document.getElementById("downloadDeckBtn").addEventListener("click", () => {
     const content = `
@@ -3329,6 +3719,7 @@ function renderFinal(assessment) {
         <p><strong>Approach / Scenario:</strong> ${escapeHtml(approachLabel)} / ${escapeHtml(timeline.scenarioLabel)}</p>
         <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Target:</strong> ${escapeHtml(timeline.horizonTargetText)}</p>
         <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+        ${isAdvancedMode ? `<h2>ISO 42001 Maturity Radar</h2><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="ISO 42001 maturity radar chart" />` : ""}
         <h2>Top Priorities</h2>
         <ol>${urgent.length ? urgent.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.priority)}${r.criticalPath ? ", critical path" : ""}) - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)}</li>`).join("") : "<li>No urgent actions generated yet.</li>"}</ol>
         <h2>Critical Findings</h2>
@@ -3353,6 +3744,12 @@ function renderFinal(assessment) {
 
   document.getElementById("downloadDocBtn").addEventListener("click", () => {
     download("align42-detailed-assessment-report.doc", "application/msword", reportHtml());
+  });
+  document.getElementById("downloadDemoReportBtn")?.addEventListener("click", () => {
+    download("align42-demo-sample-report.doc", "application/msword", demoSampleReportHtml());
+  });
+  document.getElementById("downloadDemoRoadmapBtn")?.addEventListener("click", () => {
+    download("align42-demo-sample-roadmap.ppt", "application/vnd.ms-powerpoint", demoSampleRoadmapHtml());
   });
 
   document.getElementById("downloadPdfBtn").addEventListener("click", () => {
