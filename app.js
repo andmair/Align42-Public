@@ -1,7 +1,12 @@
+const INSTALLATION_SCOPE = "__ALIGN42_INSTALL_ID__";
+const INSTALLATION_COUNTRY = "__ALIGN42_INSTALL_COUNTRY__";
+const STORAGE_PREFIX = INSTALLATION_SCOPE && INSTALLATION_SCOPE !== "__ALIGN42_INSTALL_ID__"
+  ? `align42_${INSTALLATION_SCOPE}`
+  : "align42";
 const STORAGE = {
-  profile: "align42_profile_v1",
-  settings: "align42_settings_v1",
-  assessments: "align42_assessments_v1"
+  profile: `${STORAGE_PREFIX}_profile_v1`,
+  settings: `${STORAGE_PREFIX}_settings_v1`,
+  assessments: `${STORAGE_PREFIX}_assessments_v1`
 };
 
 const OPENAI_SETUP_URL = "https://platform.openai.com/docs/quickstart?api-mode=responses";
@@ -37,6 +42,59 @@ const ISIC_SECTORS = [
   "R: Arts, entertainment and recreation",
   "S: Other service activities"
 ];
+
+const COUNTRY_BY_REGION_CODE = {
+  AU: "Australia",
+  CA: "Canada",
+  FR: "France",
+  DE: "Germany",
+  IN: "India",
+  IE: "Ireland",
+  JP: "Japan",
+  NL: "Netherlands",
+  NZ: "New Zealand",
+  SG: "Singapore",
+  ZA: "South Africa",
+  ES: "Spain",
+  SE: "Sweden",
+  CH: "Switzerland",
+  AE: "United Arab Emirates",
+  GB: "United Kingdom",
+  UK: "United Kingdom",
+  US: "United States"
+};
+
+const COUNTRY_BY_TIMEZONE = {
+  "Europe/London": "United Kingdom",
+  "Europe/Dublin": "Ireland",
+  "Europe/Paris": "France",
+  "Europe/Berlin": "Germany",
+  "Europe/Amsterdam": "Netherlands",
+  "Europe/Madrid": "Spain",
+  "Europe/Stockholm": "Sweden",
+  "Europe/Zurich": "Switzerland",
+  "Asia/Tokyo": "Japan",
+  "Asia/Singapore": "Singapore",
+  "Asia/Kolkata": "India",
+  "Asia/Dubai": "United Arab Emirates",
+  "Pacific/Auckland": "New Zealand",
+  "Africa/Johannesburg": "South Africa",
+  "America/New_York": "United States",
+  "America/Chicago": "United States",
+  "America/Denver": "United States",
+  "America/Phoenix": "United States",
+  "America/Los_Angeles": "United States",
+  "America/Anchorage": "United States",
+  "Pacific/Honolulu": "United States",
+  "America/Toronto": "Canada",
+  "America/Vancouver": "Canada",
+  "America/Montreal": "Canada",
+  "America/Halifax": "Canada",
+  "America/Winnipeg": "Canada",
+  "America/Edmonton": "Canada",
+  "America/Regina": "Canada",
+  "America/St_Johns": "Canada"
+};
 
 const sections = [
   {
@@ -552,10 +610,89 @@ function currentAssessment() {
   return found;
 }
 
+function normalizeCountryName(country) {
+  const c = `${country || ""}`.trim();
+  return COUNTRY_OPTIONS.includes(c) ? c : "";
+}
+
+function countryFromRegionCode(regionCode) {
+  const code = `${regionCode || ""}`.trim().toUpperCase();
+  return normalizeCountryName(COUNTRY_BY_REGION_CODE[code] || "");
+}
+
+function countryFromLocaleTag(localeTag) {
+  const tag = `${localeTag || ""}`.trim();
+  if (!tag) return "";
+  try {
+    if (typeof Intl !== "undefined" && Intl.Locale) {
+      const loc = new Intl.Locale(tag);
+      const fromIntl = countryFromRegionCode(loc.region || "");
+      if (fromIntl) return fromIntl;
+    }
+  } catch {}
+  const m = tag.match(/[-_]([A-Za-z]{2})(?:$|[-_])/);
+  return m ? countryFromRegionCode(m[1]) : "";
+}
+
+function countryFromTimeZone(timeZone) {
+  const tz = `${timeZone || ""}`.trim();
+  if (!tz) return "";
+  if (COUNTRY_BY_TIMEZONE[tz]) return COUNTRY_BY_TIMEZONE[tz];
+  if (tz.startsWith("Australia/")) return "Australia";
+  return "";
+}
+
+function detectLocalCountry() {
+  const fromInstaller = normalizeCountryName(INSTALLATION_COUNTRY);
+  if (fromInstaller) return { country: fromInstaller, source: "installer" };
+
+  const localeCandidates = [];
+  try {
+    const loc = Intl.DateTimeFormat().resolvedOptions().locale;
+    if (loc) localeCandidates.push(loc);
+  } catch {}
+  if (typeof navigator !== "undefined") {
+    if (Array.isArray(navigator.languages)) localeCandidates.push(...navigator.languages);
+    if (navigator.language) localeCandidates.push(navigator.language);
+  }
+  for (const tag of localeCandidates) {
+    const country = countryFromLocaleTag(tag);
+    if (country) return { country, source: "browser-locale" };
+  }
+
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const country = countryFromTimeZone(tz);
+    if (country) return { country, source: "timezone" };
+  } catch {}
+
+  return { country: "", source: "" };
+}
+
+function localisationSourceLabel(source) {
+  if (source === "installer") return "installer OS locale";
+  if (source === "browser-locale") return "browser/OS locale";
+  if (source === "timezone") return "device timezone";
+  return "local settings";
+}
+
+function localContextDefaults() {
+  const detected = detectLocalCountry();
+  const country = normalizeCountryName(detected.country);
+  if (!country) return {};
+  const frameworkSeed = baseFrameworksForContext({ country });
+  return {
+    country,
+    frameworkSuggestions: frameworkSeed.slice(),
+    applicableFrameworks: frameworkSeed.slice(),
+    localisationSource: detected.source || "local"
+  };
+}
+
 function defaultAssessmentData() {
   return {
     currentSection: 0,
-    context: {},
+    context: localContextDefaults(),
     ratings: {},
     evidence: {},
     visitedSections: {},
@@ -2162,6 +2299,9 @@ function renderContext(assessment, section) {
                 ${COUNTRY_OPTIONS.map((c) => `<option value="${escapeHtml(c)}" ${selectedCountry === c ? "selected" : ""}>${escapeHtml(c)}</option>`).join("")}
               </select>
             </label>
+            ${ctx.country && ctx.localisationSource && ctx.localisationSource !== "manual"
+              ? `<p class="hint">Country pre-filled from ${escapeHtml(localisationSourceLabel(ctx.localisationSource))}. You can change it.</p>`
+              : ""}
             ${stateOptions.length ? `
               <label>State / Province
                 <select data-field="stateProvince">
@@ -2240,6 +2380,8 @@ function renderContext(assessment, section) {
         const selected = e.target.value;
         const states = STATE_OPTIONS[selected] || [];
         if (!states.includes(assessment.data.context.stateProvince || "")) assessment.data.context.stateProvince = "";
+        assessment.data.context.localisationSource = "manual";
+        assessment.data.context.frameworkSuggestions = baseFrameworksForContext(assessment.data.context);
       }
       if (e.target.dataset.field === "industry" && !assessment.data.context.industrySector) {
         const inferred = inferSectorFromIndustryText(e.target.value);

@@ -41,6 +41,43 @@ APP_NAME="Align42"
 WORK_DIR="\$(mktemp -d)"
 trap 'rm -rf "\$WORK_DIR"' EXIT
 
+country_from_region_code() {
+  case "\${1^^}" in
+    AU) printf '%s\n' "Australia" ;;
+    CA) printf '%s\n' "Canada" ;;
+    FR) printf '%s\n' "France" ;;
+    DE) printf '%s\n' "Germany" ;;
+    IN) printf '%s\n' "India" ;;
+    IE) printf '%s\n' "Ireland" ;;
+    JP) printf '%s\n' "Japan" ;;
+    NL) printf '%s\n' "Netherlands" ;;
+    NZ) printf '%s\n' "New Zealand" ;;
+    SG) printf '%s\n' "Singapore" ;;
+    ZA) printf '%s\n' "South Africa" ;;
+    ES) printf '%s\n' "Spain" ;;
+    SE) printf '%s\n' "Sweden" ;;
+    CH) printf '%s\n' "Switzerland" ;;
+    AE) printf '%s\n' "United Arab Emirates" ;;
+    GB|UK) printf '%s\n' "United Kingdom" ;;
+    US) printf '%s\n' "United States" ;;
+    *) printf '%s\n' "" ;;
+  esac
+}
+
+detect_install_country() {
+  local locale code
+  locale="\$(defaults read -g AppleLocale 2>/dev/null || true)"
+  if [[ "\$locale" =~ [_-]([A-Za-z]{2})([_@].*)?$ ]]; then
+    code="\${BASH_REMATCH[1]}"
+  else
+    locale="\${LANG:-}"
+    if [[ "\$locale" =~ [_-]([A-Za-z]{2})(\..*)?$ ]]; then
+      code="\${BASH_REMATCH[1]}"
+    fi
+  fi
+  country_from_region_code "\$code"
+}
+
 pick_install_base() {
   local selected
   if command -v osascript >/dev/null 2>&1; then
@@ -80,6 +117,12 @@ else
 fi
 
 unzip -oq "\$PAYLOAD_ZIP" -d "\$TARGET_DIR"
+
+# Stamp app with installation-specific storage scope for clean first run.
+INSTALL_COUNTRY="\$(detect_install_country)"
+INSTALL_ID="inst_\$(date +%Y%m%d%H%M%S)_\$RANDOM"
+perl -0777 -pe "s/__ALIGN42_INSTALL_ID__/\${INSTALL_ID}/g; s/__ALIGN42_INSTALL_COUNTRY__/\${INSTALL_COUNTRY}/g" "\$TARGET_DIR/app.js" > "\$TARGET_DIR/.app.js.tmp"
+mv "\$TARGET_DIR/.app.js.tmp" "\$TARGET_DIR/app.js"
 
 # Verify required app files exist before creating launcher/opening app.
 required_files=(
@@ -153,6 +196,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Expand-Archive -LiteralPath '%ZIP_FILE%' -DestinationPath '%TARGET_DIR%' -Force;"
 if errorlevel 1 (
   echo Installation failed while extracting payload.
+  exit /b 1
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference = 'Stop';" ^
+  "$region = '';" ^
+  "try { $region = [System.Globalization.RegionInfo]::CurrentRegion.TwoLetterISORegionName } catch {};" ^
+  "if (-not $region) { try { $region = (Get-Culture).Name.Split('-')[-1] } catch {} };" ^
+  "$installCountry = switch ($region.ToUpper()) { 'AU' { 'Australia' } 'CA' { 'Canada' } 'FR' { 'France' } 'DE' { 'Germany' } 'IN' { 'India' } 'IE' { 'Ireland' } 'JP' { 'Japan' } 'NL' { 'Netherlands' } 'NZ' { 'New Zealand' } 'SG' { 'Singapore' } 'ZA' { 'South Africa' } 'ES' { 'Spain' } 'SE' { 'Sweden' } 'CH' { 'Switzerland' } 'AE' { 'United Arab Emirates' } 'GB' { 'United Kingdom' } 'UK' { 'United Kingdom' } 'US' { 'United States' } default { '' } };" ^
+  "$installId = 'inst_' + [Guid]::NewGuid().ToString('N');" ^
+  "$appJs = Join-Path '%TARGET_DIR%' 'app.js';" ^
+  "$content = Get-Content -LiteralPath $appJs -Raw;" ^
+  "$content = $content.Replace('__ALIGN42_INSTALL_ID__', $installId);" ^
+  "$content = $content.Replace('__ALIGN42_INSTALL_COUNTRY__', $installCountry);" ^
+  "Set-Content -LiteralPath $appJs -Value $content -NoNewline;"
+if errorlevel 1 (
+  echo Installation failed while stamping installation ID.
   exit /b 1
 )
 
