@@ -1714,6 +1714,173 @@ function draftEmail(to, subject, body) {
   window.location.href = `mailto:${encodeURIComponent(to)}?${params.toString()}`;
 }
 
+function normalizeDelegationControlText(value) {
+  return `${value || ""}`.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function findDelegationControlByLabel(label, controls) {
+  const norm = normalizeDelegationControlText(label);
+  if (!norm) return null;
+  return controls.find((c) => {
+    const idNorm = normalizeDelegationControlText(c.id);
+    const controlNorm = normalizeDelegationControlText(c.control);
+    return norm === idNorm || norm === controlNorm || controlNorm.includes(norm) || norm.includes(controlNorm);
+  }) || null;
+}
+
+function parseDelegatedResponseTemplate(rawText, batch) {
+  const text = `${rawText || ""}`.replace(/\r/g, "").trim();
+  const controls = batch?.controls || [];
+  const byControl = {};
+  const notes = [];
+  if (!controls.length || !text) return { byControl, notes, mappedCount: 0, fallback: true };
+
+  controls.forEach((c) => { byControl[c.id] = ""; });
+  let current = controls[0];
+  const lines = text.split("\n");
+  lines.forEach((line) => {
+    const controlMatch = line.match(/^\s*(control|heading)\s*[:#-]\s*(.+)\s*$/i);
+    if (controlMatch) {
+      const found = findDelegationControlByLabel(controlMatch[2], controls);
+      if (found) current = found;
+      return;
+    }
+    const bracketMatch = line.match(/^\s*\[(.+)\]\s*$/);
+    if (bracketMatch) {
+      const found = findDelegationControlByLabel(bracketMatch[1], controls);
+      if (found) {
+        current = found;
+        return;
+      }
+    }
+    const directControl = controls.find((c) => normalizeDelegationControlText(line) === normalizeDelegationControlText(c.control));
+    if (directControl) {
+      current = directControl;
+      return;
+    }
+    if (!line.trim() && !byControl[current.id]) return;
+    byControl[current.id] = `${byControl[current.id]}${line}\n`;
+  });
+
+  let mappedCount = 0;
+  Object.keys(byControl).forEach((id) => {
+    byControl[id] = byControl[id].trim();
+    if (byControl[id]) mappedCount += 1;
+  });
+  if (!mappedCount && text) {
+    byControl[controls[0].id] = text;
+    mappedCount = 1;
+    notes.push("No control headings found; content mapped to the first delegated control.");
+  }
+  return { byControl, notes, mappedCount, fallback: mappedCount === 1 && controls.length > 1 };
+}
+
+async function mapDelegatedResponseWithAi(rawText, batch, context) {
+  const controls = batch?.controls || [];
+  if (!controls.length) return { byControl: {}, mappedCount: 0, notes: ["No delegated controls found."] };
+  if (assessmentMode() !== "advanced" || !aiFeaturesEnabled() || !aiProviderReady()) {
+    throw new Error("AI mapping is available only in Advanced mode with AI provider configured.");
+  }
+
+  const sensitive = [state.profile?.name, state.profile?.email, context?.orgName, context?.orgLegalName, batch?.name, batch?.email];
+  const masked = maskSensitiveText(rawText, sensitive);
+  const controlSpecs = controls.map((c) => ({
+    controlId: c.id,
+    control: c.control,
+    questions: delegationQuestions(c, { data: { context: context || {} } }, batch.role || "CONTRIBUTOR")
+  }));
+
+  const prompt = [
+    "Map delegate response text to the provided controls.",
+    `Role: ${batch.role || "CONTRIBUTOR"}`,
+    `Controls: ${JSON.stringify(controlSpecs)}`,
+    `Response text: ${masked}`,
+    "Return strict JSON only:",
+    "{\"mappings\":[{\"controlId\":\"...\",\"response\":\"...\"}],\"unmapped\":\"...\"}",
+    "Do not invent control IDs."
+  ].join("\n");
+
+  const raw = `${await aiComplete("You map delegated ISO 42001 responses into control buckets. Return JSON only.", prompt) || ""}`.trim();
+  const parsed = safeJsonParse(raw) || {};
+  const byControl = {};
+  controls.forEach((c) => { byControl[c.id] = ""; });
+
+  const mappings = Array.isArray(parsed.mappings) ? parsed.mappings : [];
+  mappings.forEach((m) => {
+    const id = `${m.controlId || ""}`.trim();
+    if (!byControl.hasOwnProperty(id)) return;
+    const txt = `${m.response || ""}`.trim();
+    if (!txt) return;
+    byControl[id] = byControl[id] ? `${byControl[id]}\n\n${txt}` : txt;
+  });
+  const mappedCount = Object.values(byControl).filter((v) => `${v}`.trim()).length;
+  const notes = [];
+  const unmapped = `${parsed.unmapped || ""}`.trim();
+  if (unmapped) notes.push(`Unmapped excerpt: ${unmapped.slice(0, 220)}${unmapped.length > 220 ? "..." : ""}`);
+  return { byControl, mappedCount, notes };
+}
+
+function fillDelegationResponseTextareas(root, delegationId, byControl) {
+  Object.entries(byControl || {}).forEach(([controlId, text]) => {
+    const area = root.querySelector(`[data-response-text='${delegationId}:${controlId}']`);
+    if (!area) return;
+    area.value = `${text || ""}`.trim();
+    area.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+}
+
+async function applyDelegatedResponses(assessment, batch, responseByControl, files = []) {
+  let analyzedCount = 0;
+  let appliedCount = 0;
+  for (const c of batch.controls) {
+    const txt = `${(responseByControl || {})[c.id] || ""}`.trim();
+    if (!txt) continue;
+    const ev = ensureEvidence(assessment, c.id);
+    const stamp = `Delegate response from ${batch.name} (${batch.title}) on ${new Date(batch.delegatedAt).toLocaleString()}:`;
+    ev.notes = `${ev.notes || ""}\n\n${stamp}\n${txt}`.trim();
+    logDelegationEvent(assessment, batch.delegationId, "RESPONDED", { responseText: txt }, c.id);
+    appliedCount += 1;
+    if (assessmentMode() === "advanced" && aiFeaturesEnabled() && aiProviderReady()) {
+      try {
+        const analysis = await runDelegateResponseAi(c, txt, assessment.data.context || {}, batch.role || "CONTRIBUTOR");
+        if (!ev.delegateAnalysis) ev.delegateAnalysis = [];
+        ev.delegateAnalysis.push({
+          id: uid("delegate_ai"),
+          delegationId: batch.delegationId,
+          role: batch.role || "CONTRIBUTOR",
+          analyzedAt: nowIso(),
+          summary: analysis.summary || "",
+          extractedEvidence: analysis.extractedEvidence || [],
+          mappedControl: analysis.mappedControl || c.control,
+          mappingRationale: analysis.mappingRationale || ""
+        });
+        analyzedCount += 1;
+        logDelegationEvent(assessment, batch.delegationId, "DELEGATE_RESPONSE_ANALYZED", { mappedControl: analysis.mappedControl || c.control }, c.id);
+      } catch (err) {
+        logDelegationEvent(assessment, batch.delegationId, "DELEGATE_RESPONSE_ANALYSIS_FAILED", { error: err.message || "analysis failed" }, c.id);
+      }
+    }
+  }
+
+  for (const c of batch.controls) {
+    const ev = ensureEvidence(assessment, c.id);
+    for (const f of files) ev.files.push({ id: uid("file"), name: f.name, size: f.size, type: f.type || "file", addedAt: nowIso(), delegationId: batch.delegationId });
+  }
+  if (files.length) {
+    logDelegationEvent(assessment, batch.delegationId, "RESPONSE_FILES_ADDED", { fileNames: files.map((f) => f.name) });
+  }
+  if (appliedCount || files.length) updateDelegationStatus(assessment, batch.delegationId, "RESPONDED");
+  assessment.updatedAt = nowIso();
+  saveAssessments();
+  return { analyzedCount, appliedCount };
+}
+
+function delegationSectionIndex(assessment, batch) {
+  const controlIds = new Set((batch.controls || []).map((c) => c.id));
+  const idx = sections.findIndex((s) => s.type === "controls" && s.controls.some((c) => controlIds.has(c.id)));
+  return idx >= 0 ? idx : 0;
+}
+
 function updateDelegationStatus(assessment, delegationId, targetStatus) {
   const allowed = {
     SENT: ["RESPONDED", "CLOSED"],
@@ -1742,6 +1909,10 @@ function updateDelegationStatus(assessment, delegationId, targetStatus) {
 
 function renderDelegationsPage(assessment) {
   const batches = allDelegationBatches(assessment);
+  const pending = batches.filter((b) => `${b.status || "SENT"}`.toUpperCase() === "SENT");
+  const responded = batches.filter((b) => `${b.status || "SENT"}`.toUpperCase() === "RESPONDED");
+  const closed = batches.filter((b) => `${b.status || "SENT"}`.toUpperCase() === "CLOSED");
+  const aiMapAvailable = assessmentMode() === "advanced" && aiFeaturesEnabled() && aiProviderReady();
   app.innerHTML = `
     <div class="shell">
       <header class="topbar">
@@ -1757,7 +1928,29 @@ function renderDelegationsPage(assessment) {
       </header>
       <main class="container card content">
         <div class="list-head"><h2 style="margin:0;">Delegation Records</h2><span class="meta-pill">${batches.length} delegations</span></div>
-        <p class="hint">Track status transitions, view response history, and close completed delegation threads.</p>
+        <p class="hint">Track status transitions, view response history, and process delegated responses.</p>
+
+        <div class="report-grid">
+          <div class="tile"><h3>Pending (SENT)</h3><p><strong>${pending.length}</strong></p></div>
+          <div class="tile"><h3>Responded</h3><p><strong>${responded.length}</strong></p></div>
+          <div class="tile"><h3>Closed</h3><p><strong>${closed.length}</strong></p></div>
+          <div class="tile"><h3>Total Delegations</h3><p><strong>${batches.length}</strong></p></div>
+        </div>
+
+        <div class="question question-focus">
+          <h3>Pending Response Inbox</h3>
+          ${pending.length ? pending.map((b) => `
+            <div class="roadmap-row delegate-row">
+              <p><strong>${escapeHtml(b.name || b.email)}</strong> (${escapeHtml(b.title || "")}) | ${escapeHtml(b.email)}</p>
+              <p><strong>Controls pending:</strong> ${escapeHtml((b.controls || []).map((c) => c.control).join("; "))}</p>
+              <div class="actions">
+                <button class="btn secondary small" data-open-workspace="${escapeHtml(b.delegationId)}">Open Response Workspace</button>
+                <button class="btn ghost small" data-status-update="${escapeHtml(b.delegationId)}:CLOSED">Close Delegation</button>
+              </div>
+            </div>
+          `).join("") : "<p>No pending delegated responses.</p>"}
+        </div>
+
         ${batches.length === 0 ? "<p>No delegations yet.</p>" : batches.map((b) => {
           const status = `${b.status || "SENT"}`.toUpperCase();
           const statusTone = status === "CLOSED" ? "ok" : status === "RESPONDED" ? "warn" : "info";
@@ -1775,6 +1968,20 @@ function renderDelegationsPage(assessment) {
                 <button class="btn secondary small" data-status-update="${escapeHtml(b.delegationId)}:RESPONDED" ${(b.status || "SENT") !== "SENT" ? "disabled" : ""}>Mark RESPONDED</button>
                 <button class="btn secondary small" data-status-update="${escapeHtml(b.delegationId)}:CLOSED" ${(b.status || "SENT") === "CLOSED" ? "disabled" : ""}>Mark CLOSED</button>
               </div>
+              <details class="evidence" style="margin-top:0.55rem;">
+                <summary><strong>Paste and Parse Delegated Response</strong></summary>
+                <p class="hint">Paste a full email reply. Use "Parse and Auto-fill" for quick mapping by headings. ${assessmentMode() === "advanced" ? "AI mapping is available for unstructured replies." : ""}</p>
+                <textarea data-parse-input="${escapeHtml(b.delegationId)}" placeholder="Paste full delegated response here, including control and question headings."></textarea>
+                <div class="actions">
+                  <button class="btn secondary small" data-parse-local="${escapeHtml(b.delegationId)}">Parse and Auto-fill</button>
+                  ${assessmentMode() === "advanced" ? `<button class="btn secondary small" data-parse-ai="${escapeHtml(b.delegationId)}" ${aiMapAvailable ? "" : "disabled"}>${aiMapAvailable ? "AI Assist Mapping" : "AI mapping unavailable"}</button>` : ""}
+                </div>
+                <div>
+                  ${(b.controls || []).map((c) => `<label style="display:block; margin-top:0.45rem;"><strong>${escapeHtml(c.control)}</strong><textarea data-parse-target="${escapeHtml(b.delegationId)}:${escapeHtml(c.id)}" placeholder="Mapped response for this control"></textarea></label>`).join("")}
+                </div>
+                <input type="file" data-parse-files="${escapeHtml(b.delegationId)}" multiple />
+                <button class="btn primary small" data-parse-apply="${escapeHtml(b.delegationId)}">Apply Parsed Responses</button>
+              </details>
               <div class="evidence">
                 <strong>Response History</strong>
                 <ul class="evidence-list">
@@ -1794,6 +2001,20 @@ function renderDelegationsPage(assessment) {
     state.view = "assessment";
     render();
   });
+  document.querySelectorAll("[data-open-workspace]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const did = e.currentTarget.dataset.openWorkspace;
+      const batch = batches.find((b) => b.delegationId === did);
+      if (!batch) return;
+      const idx = delegationSectionIndex(assessment, batch);
+      assessment.data.currentSection = idx;
+      state.view = "assessment";
+      if (!state.ui.uploadOpen) state.ui.uploadOpen = {};
+      state.ui.uploadOpen[did] = true;
+      flushAssessmentSave(assessment);
+      renderAssessment(assessment);
+    });
+  });
   document.querySelectorAll("[data-status-update]").forEach((btn) => {
     btn.addEventListener("click", (e) => {
       const [delegationId, status] = e.currentTarget.dataset.statusUpdate.split(":");
@@ -1803,6 +2024,72 @@ function renderDelegationsPage(assessment) {
       renderDelegationsPage(assessment);
     });
   });
+  document.querySelectorAll("[data-parse-local]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const did = e.currentTarget.dataset.parseLocal;
+      const batch = batches.find((b) => b.delegationId === did);
+      if (!batch) return;
+      const raw = (document.querySelector(`[data-parse-input='${did}']`)?.value || "").trim();
+      if (!raw) return toast("Paste delegated response text first.");
+      const parsed = parseDelegatedResponseTemplate(raw, batch);
+      Object.entries(parsed.byControl).forEach(([controlId, text]) => {
+        const target = document.querySelector(`[data-parse-target='${did}:${controlId}']`);
+        if (target) target.value = text || "";
+      });
+      toast(`Parsed responses mapped to ${parsed.mappedCount} control(s).${parsed.notes.length ? ` ${parsed.notes[0]}` : ""}`);
+    });
+  });
+  document.querySelectorAll("[data-parse-ai]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const did = e.currentTarget.dataset.parseAi;
+      const batch = batches.find((b) => b.delegationId === did);
+      if (!batch) return;
+      const raw = (document.querySelector(`[data-parse-input='${did}']`)?.value || "").trim();
+      if (!raw) return toast("Paste delegated response text first.");
+      e.currentTarget.disabled = true;
+      e.currentTarget.textContent = "Mapping...";
+      try {
+        const parsed = await mapDelegatedResponseWithAi(raw, batch, assessment.data.context || {});
+        Object.entries(parsed.byControl).forEach(([controlId, text]) => {
+          const target = document.querySelector(`[data-parse-target='${did}:${controlId}']`);
+          if (target) target.value = text || "";
+        });
+        toast(`AI mapped responses to ${parsed.mappedCount} control(s).`);
+      } catch (err) {
+        toast(err.message || "AI mapping failed.");
+      } finally {
+        e.currentTarget.disabled = !aiMapAvailable;
+        e.currentTarget.textContent = aiMapAvailable ? "AI Assist Mapping" : "AI mapping unavailable";
+      }
+    });
+  });
+  document.querySelectorAll("[data-parse-apply]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const did = e.currentTarget.dataset.parseApply;
+      const batch = batches.find((b) => b.delegationId === did);
+      if (!batch) return;
+      let responseByControl = {};
+      (batch.controls || []).forEach((c) => {
+        responseByControl[c.id] = (document.querySelector(`[data-parse-target='${did}:${c.id}']`)?.value || "").trim();
+      });
+      const files = Array.from(document.querySelector(`[data-parse-files='${did}']`)?.files || []);
+      let hasText = Object.values(responseByControl).some((x) => `${x}`.trim());
+      if (!hasText) {
+        const raw = (document.querySelector(`[data-parse-input='${did}']`)?.value || "").trim();
+        if (raw) {
+          const parsed = parseDelegatedResponseTemplate(raw, batch);
+          responseByControl = parsed.byControl || responseByControl;
+          hasText = Object.values(responseByControl).some((x) => `${x}`.trim());
+        }
+      }
+      if (!hasText && !files.length) return toast("Add parsed text or attachments before applying.");
+      const applied = await applyDelegatedResponses(assessment, batch, responseByControl, files);
+      toast(applied.analyzedCount ? `Applied ${applied.appliedCount} response(s); AI analyzed ${applied.analyzedCount}.` : `Applied ${applied.appliedCount} response(s).`);
+      renderDelegationsPage(assessment);
+    });
+  });
+  attachDictationButtons(app, "textarea[data-parse-input]");
+  attachDictationButtons(app, "textarea[data-parse-target]");
 }
 
 function render() {
@@ -2173,12 +2460,13 @@ function renderAssessment(assessment) {
   const completion = completionPercent(assessment);
   const score = weightedScorePercent(assessment);
   const delegateOpen = !!(state.ui.delegateOpen && state.ui.delegateOpen[section.id]);
+  const sectionDelegation = sectionDelegationSummary(assessment, section);
 
   app.innerHTML = `
     <div class="shell">
       <header class="topbar">
         <div class="brand">
-          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>${escapeHtml(assessment.title)}</h1><span class="meta-pill">Step ${assessment.data.currentSection + 1}/${sections.length}</span></div>
+          <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>${escapeHtml(assessment.title)}</h1><span class="meta-pill">Step ${assessment.data.currentSection + 1}/${sections.length}</span>${section.type === "controls" && sectionDelegation.pendingControls > 0 ? `<span class="meta-pill pending">Pending feedback: ${sectionDelegation.pendingControls}</span>` : ""}</div>
           <p>${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
         </div>
         <div class="actions">
@@ -2204,9 +2492,15 @@ function renderAssessment(assessment) {
               const canJump = p >= 100 || visited || i === assessment.data.currentSection;
               const stateClass = p >= 100 ? "done" : p > 0 ? "active" : "todo";
               const currentClass = i === assessment.data.currentSection ? "current" : "";
+              const ds = sectionDelegationSummary(assessment, s);
+              const cue = ds.pendingControls > 0
+                ? `<span class="section-cue section-cue-pending">${ds.pendingControls} pending</span>`
+                : ds.delegatedControls > 0
+                  ? `<span class="section-cue section-cue-delegated">${ds.delegatedControls} delegated</span>`
+                  : "";
               const heading = canJump
-                ? `<span class="section-link">${i + 1}. ${escapeHtml(s.title)}</span>`
-                : `<span class="section-static">${i + 1}. ${escapeHtml(s.title)}</span>`;
+                ? `<span class="section-link">${i + 1}. ${escapeHtml(s.title)}</span>${cue}`
+                : `<span class="section-static">${i + 1}. ${escapeHtml(s.title)}</span>${cue}`;
               return `<div class="section-progress-item ${stateClass} ${currentClass} ${canJump ? "jumpable" : ""}" ${canJump ? `data-jump-section="${i}" role="button" tabindex="0" aria-label="Go to ${escapeHtml(s.title)}"` : ""}><div class="title">${heading}<strong>${p}%</strong></div><div class="progress-bar"><div style="width:${p}%"></div></div></div>`;
             }).join("")}
           </div>
@@ -2468,6 +2762,48 @@ function delegationsForSection(assessment, section) {
     .filter((b) => b.controls.length > 0);
 }
 
+function latestDelegationForControl(assessment, controlId) {
+  return (assessment.data.delegates[controlId] || [])
+    .slice()
+    .sort((a, b) => `${b.delegatedAt || ""}`.localeCompare(`${a.delegatedAt || ""}`))[0] || null;
+}
+
+function sectionDelegationSummary(assessment, section) {
+  if (!section || section.type !== "controls") return { delegatedControls: 0, pendingControls: 0 };
+  const delegated = new Set();
+  const pending = new Set();
+  (section.controls || []).forEach((c) => {
+    const entries = assessment.data.delegates[c.id] || [];
+    if (!entries.length) return;
+    delegated.add(c.id);
+    if (entries.some((d) => `${d.status || "SENT"}`.toUpperCase() === "SENT")) pending.add(c.id);
+  });
+  return { delegatedControls: delegated.size, pendingControls: pending.size };
+}
+
+function delegatedContributorsForControl(assessment, controlId) {
+  const batches = allDelegationBatches(assessment);
+  const nameByDelegationId = {};
+  batches.forEach((b) => {
+    nameByDelegationId[b.delegationId] = (b.name || b.email || "").trim();
+  });
+
+  const profileName = `${state.profile?.name || ""}`.trim().toLowerCase();
+  const profileEmail = `${state.profile?.email || ""}`.trim().toLowerCase();
+  const contributors = new Set();
+  (assessment.data.delegationEvents || []).forEach((e) => {
+    if (e.controlId !== controlId || e.eventType !== "RESPONDED") return;
+    const txt = `${e.details?.responseText || ""}`.trim();
+    if (!txt) return;
+    const rawName = `${nameByDelegationId[e.delegationId] || ""}`.trim();
+    if (!rawName) return;
+    const lowered = rawName.toLowerCase();
+    if (lowered === profileName || lowered === profileEmail) return;
+    contributors.add(rawName);
+  });
+  return Array.from(contributors);
+}
+
 function delegationQuestions(control, assessment = null, role = "CONTRIBUTOR") {
   const list = [
     control.prompt,
@@ -2489,6 +2825,7 @@ function delegationQuestions(control, assessment = null, role = "CONTRIBUTOR") {
 function renderControls(assessment, section) {
   const root = document.getElementById("wizardSection");
   const batches = delegationsForSection(assessment, section);
+  const delegationSummary = sectionDelegationSummary(assessment, section);
   const delegateOpen = !!(state.ui.delegateOpen && state.ui.delegateOpen[section.id]);
   const mode = assessmentMode();
   const aiWarning = mode === "advanced" ? aiDisabledReason() : "";
@@ -2498,7 +2835,7 @@ function renderControls(assessment, section) {
   const sectionInsightView = sectionInsight || heuristicSectionInsights(assessment, section);
 
   root.innerHTML = `
-    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(section.title)}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div></div>
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(section.title)}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div><div class="heading-cues">${delegationSummary.delegatedControls > 0 ? `<span class="tag info">Delegated controls: ${delegationSummary.delegatedControls}</span>` : ""}${delegationSummary.pendingControls > 0 ? `<span class="tag warn">Pending feedback: ${delegationSummary.pendingControls}</span>` : ""}</div></div>
 
     ${sectionFindings.length ? `<div class="question question-alert">
       <h3>⚠ Consistency and Dependency Findings</h3>
@@ -2545,6 +2882,15 @@ function renderControls(assessment, section) {
         <p><strong>Controls:</strong> ${escapeHtml(b.controls.map((c) => c.control).join("; "))}</p>
         <button class="btn secondary small" data-upload-toggle="${escapeHtml(b.delegationId)}">Upload Responses</button>
         <div style="display:${state.ui.uploadOpen[b.delegationId] ? "block" : "none"}; margin-top:0.6rem;" id="upload-${escapeHtml(b.delegationId)}">
+          <div class="question">
+            <h3>Paste and Parse (all delegated controls)</h3>
+            <p class="hint">Paste the delegate's full email response. Parse it to auto-fill control response boxes.</p>
+            <textarea data-import-text="${escapeHtml(b.delegationId)}" placeholder="Paste full delegated response email text here."></textarea>
+            <div class="actions">
+              <button class="btn secondary small" type="button" data-parse-import="${escapeHtml(b.delegationId)}">Parse and Auto-fill</button>
+              ${assessmentMode() === "advanced" ? `<button class="btn secondary small" type="button" data-parse-import-ai="${escapeHtml(b.delegationId)}" ${(aiFeaturesEnabled() && aiProviderReady()) ? "" : "disabled"}>${(aiFeaturesEnabled() && aiProviderReady()) ? "AI Assist Mapping" : "AI mapping unavailable"}</button>` : ""}
+            </div>
+          </div>
           ${b.controls.map((c) => {
             const ev = ensureEvidence(assessment, c.id);
             const analyses = (ev.delegateAnalysis || []).filter((x) => x.delegationId === b.delegationId);
@@ -2565,10 +2911,13 @@ function renderControls(assessment, section) {
       const regMap = regulatoryMappingForControl(c, assessment.data.context || {});
       const explain = ai.interpretStructured ? explainabilityDetails(assessment, c, ai.interpretStructured) : null;
       const eq = evidenceQualityMetrics(ev);
+      const contributors = delegatedContributorsForControl(assessment, c.id);
       const latestDelegateAnalysis = (ev.delegateAnalysis || []).slice().sort((a, b) => `${b.analyzedAt || ""}`.localeCompare(`${a.analyzedAt || ""}`))[0];
-      const latestDelegation = (assessment.data.delegates[c.id] || []).slice().sort((a, b) => `${b.delegatedAt}`.localeCompare(`${a.delegatedAt}`))[0];
+      const latestDelegation = latestDelegationForControl(assessment, c.id);
+      const latestDelegationStatus = `${latestDelegation?.status || ""}`.toUpperCase();
+      const delegatedClass = latestDelegationStatus === "SENT" ? "delegated-pending" : latestDelegation ? "delegated" : "";
       return `
-        <div class="question control-card ${tone}">
+        <div class="question control-card ${tone} ${delegatedClass}">
           <h3>${escapeHtml(c.control)}</h3>
           <p class="hint">${escapeHtml(c.prompt)}</p>
           ${personalizedControlHint(assessment, c) ? `<p class="hint"><strong>Personalized focus:</strong> ${escapeHtml(personalizedControlHint(assessment, c))}</p>` : ""}
@@ -2576,6 +2925,7 @@ function renderControls(assessment, section) {
             <span class="tag">${escapeHtml(c.clause)}</span>
             <span class="tag">Weight ${c.weight}</span>
             <span class="tag ${tone}">${complianceStatus(score)}</span>
+            ${latestDelegation ? `<span class="tag ${latestDelegationStatus === "SENT" ? "warn" : latestDelegationStatus === "RESPONDED" ? "info" : "ok"}">${latestDelegationStatus === "SENT" ? "Pending delegate feedback" : latestDelegationStatus === "RESPONDED" ? "Delegate response received" : "Delegation closed"}</span>` : ""}
             ${latestDelegation ? `<span class="tag">Delegated to ${escapeHtml(latestDelegation.name || latestDelegation.email)} on ${escapeHtml(new Date(latestDelegation.delegatedAt).toLocaleDateString())}</span>` : ""}
           </div>
           ${mode === "advanced"
@@ -2624,6 +2974,7 @@ function renderControls(assessment, section) {
 
           <div class="evidence">
             <strong>Response and Evidence</strong>
+            ${contributors.length ? `<p class="hint"><strong>Contributors:</strong> ${escapeHtml(contributors.join(", "))}</p>` : ""}
             ${mode === "advanced" ? `<div class="control-actions" style="margin-top:0.45rem;">
               <button class="btn secondary small" type="button" data-ai-copilot="${c.id}:draft">AI Draft Response</button>
               <button class="btn secondary small" type="button" data-ai-copilot="${c.id}:improve">AI Improve Response</button>
@@ -2860,15 +3211,24 @@ function renderControls(assessment, section) {
       `Assigned role: ${role}`,
       "What is required:",
       "1) Reply to this email.",
-      "2) Write responses under each question heading.",
-      "3) Attach supporting documents and reference them in your answers.",
+      "2) Keep the headings and question numbers unchanged.",
+      "3) Write your responses under each 'Response Q#' prompt.",
+      "4) Add evidence references under each 'Evidence Ref Q#' prompt.",
+      "5) Attach supporting documents and reference filenames in your answers.",
       ""
     ];
     if (intro) lines.push(`Additional context: ${intro}`, "");
-    lines.push(`Assessment: ${assessment.title}`, "", "Controls and questions:", "");
+    lines.push(`Assessment: ${assessment.title}`, "", "Controls and response template:", "");
     controls.forEach((c) => {
-      lines.push(c.control, "-".repeat(Math.max(8, c.control.length)));
-      delegationQuestions(c, assessment, role).forEach((q, i) => lines.push(`Q${i + 1}. ${q}`));
+      lines.push(`Control: ${c.control} (${c.id} | ${c.clause})`);
+      lines.push("-".repeat(Math.max(8, c.control.length)));
+      delegationQuestions(c, assessment, role).forEach((q, i) => {
+        lines.push(`Q${i + 1}. ${q}`);
+        lines.push(`Response Q${i + 1}:`);
+        lines.push("");
+        lines.push(`Evidence Ref Q${i + 1}:`);
+        lines.push("");
+      });
       lines.push("");
     });
     lines.push(`Please reply to: ${state.profile.email}`);
@@ -2888,55 +3248,66 @@ function renderControls(assessment, section) {
     });
   });
 
+  root.querySelectorAll("[data-parse-import]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      const delegationId = e.currentTarget.dataset.parseImport;
+      const batch = batches.find((b) => b.delegationId === delegationId);
+      if (!batch) return;
+      const raw = (root.querySelector(`[data-import-text='${delegationId}']`)?.value || "").trim();
+      if (!raw) return toast("Paste delegated response text first.");
+      const parsed = parseDelegatedResponseTemplate(raw, batch);
+      fillDelegationResponseTextareas(root, delegationId, parsed.byControl);
+      toast(`Parsed responses mapped to ${parsed.mappedCount} control(s).${parsed.notes.length ? ` ${parsed.notes[0]}` : ""}`);
+    });
+  });
+
+  root.querySelectorAll("[data-parse-import-ai]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const delegationId = e.currentTarget.dataset.parseImportAi;
+      const batch = batches.find((b) => b.delegationId === delegationId);
+      if (!batch) return;
+      const raw = (root.querySelector(`[data-import-text='${delegationId}']`)?.value || "").trim();
+      if (!raw) return toast("Paste delegated response text first.");
+      e.currentTarget.disabled = true;
+      e.currentTarget.textContent = "Mapping...";
+      try {
+        const parsed = await mapDelegatedResponseWithAi(raw, batch, assessment.data.context || {});
+        fillDelegationResponseTextareas(root, delegationId, parsed.byControl);
+        toast(`AI mapped responses to ${parsed.mappedCount} control(s).`);
+      } catch (err) {
+        toast(err.message || "AI mapping failed.");
+      } finally {
+        const available = aiFeaturesEnabled() && aiProviderReady();
+        e.currentTarget.disabled = !available;
+        e.currentTarget.textContent = available ? "AI Assist Mapping" : "AI mapping unavailable";
+      }
+    });
+  });
+
   root.querySelectorAll("[data-submit-responses]").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const delegationId = e.currentTarget.dataset.submitResponses;
       const batch = batches.find((b) => b.delegationId === delegationId);
       if (!batch) return;
-      let analyzedCount = 0;
-
-      for (const c of batch.controls) {
-        const txt = (root.querySelector(`[data-response-text='${delegationId}:${c.id}']`)?.value || "").trim();
-        if (txt) {
-          const ev = ensureEvidence(assessment, c.id);
-          const stamp = `Delegate response from ${batch.name} (${batch.title}) on ${new Date(batch.delegatedAt).toLocaleString()}:`;
-          ev.notes = `${ev.notes || ""}\n\n${stamp}\n${txt}`.trim();
-          logDelegationEvent(assessment, delegationId, "RESPONDED", { responseText: txt }, c.id);
-          try {
-            const analysis = await runDelegateResponseAi(c, txt, assessment.data.context || {}, batch.role || "CONTRIBUTOR");
-            if (!ev.delegateAnalysis) ev.delegateAnalysis = [];
-            ev.delegateAnalysis.push({
-              id: uid("delegate_ai"),
-              delegationId,
-              role: batch.role || "CONTRIBUTOR",
-              analyzedAt: nowIso(),
-              summary: analysis.summary || "",
-              extractedEvidence: analysis.extractedEvidence || [],
-              mappedControl: analysis.mappedControl || c.control,
-              mappingRationale: analysis.mappingRationale || ""
-            });
-            analyzedCount += 1;
-            logDelegationEvent(assessment, delegationId, "DELEGATE_RESPONSE_ANALYZED", { mappedControl: analysis.mappedControl || c.control }, c.id);
-          } catch (err) {
-            logDelegationEvent(assessment, delegationId, "DELEGATE_RESPONSE_ANALYSIS_FAILED", { error: err.message || "analysis failed" }, c.id);
-          }
+      let responseByControl = {};
+      (batch.controls || []).forEach((c) => {
+        responseByControl[c.id] = (root.querySelector(`[data-response-text='${delegationId}:${c.id}']`)?.value || "").trim();
+      });
+      const files = Array.from(root.querySelector(`[data-response-files='${delegationId}']`)?.files || []);
+      let hasText = Object.values(responseByControl).some((x) => `${x}`.trim());
+      if (!hasText) {
+        const raw = (root.querySelector(`[data-import-text='${delegationId}']`)?.value || "").trim();
+        if (raw) {
+          const parsed = parseDelegatedResponseTemplate(raw, batch);
+          responseByControl = parsed.byControl || responseByControl;
+          hasText = Object.values(responseByControl).some((x) => `${x}`.trim());
+          fillDelegationResponseTextareas(root, delegationId, responseByControl);
         }
       }
-
-      const files = Array.from(root.querySelector(`[data-response-files='${delegationId}']`)?.files || []);
-      for (const c of batch.controls) {
-        const ev = ensureEvidence(assessment, c.id);
-        for (const f of files) ev.files.push({ id: uid("file"), name: f.name, size: f.size, type: f.type || "file", addedAt: nowIso(), delegationId });
-      }
-      if (files.length) {
-        logDelegationEvent(assessment, delegationId, "RESPONSE_FILES_ADDED", { fileNames: files.map((f) => f.name) });
-      }
-      updateDelegationStatus(assessment, delegationId, "RESPONDED");
-
-      assessment.updatedAt = nowIso();
-      saveAssessments();
+      if (!hasText && !files.length) return toast("Add responses or attachments before applying.");
+      const applied = await applyDelegatedResponses(assessment, batch, responseByControl, files);
       renderAssessment(assessment);
-      toast(analyzedCount ? `Delegate responses applied. AI analyzed ${analyzedCount} response(s).` : "Delegate responses applied locally.");
+      toast(applied.analyzedCount ? `Delegate responses applied. AI analyzed ${applied.analyzedCount} response(s).` : `Delegate responses applied (${applied.appliedCount} response(s)).`);
     });
   });
 
@@ -2956,6 +3327,7 @@ function renderControls(assessment, section) {
 
   attachDictationButtons(root, "textarea[data-evidence-note]");
   attachDictationButtons(root, "textarea[data-response-text]");
+  attachDictationButtons(root, "textarea[data-import-text]");
 }
 
 function controlRows(assessment) {

@@ -456,6 +456,25 @@ textarea {
   gap: 0.55rem;
 }
 
+.section-cue {
+  margin-left: 0.35rem;
+  border-radius: 999px;
+  padding: 0.12rem 0.42rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.section-cue-pending {
+  background: #fff4e6;
+  color: #8a5918;
+}
+
+.section-cue-delegated {
+  background: #eaf3ff;
+  color: #2a5f97;
+}
+
 .section-static {
   color: #2c4b43;
 }
@@ -520,6 +539,13 @@ textarea {
 
 .wizard-head > * {
   min-width: 0;
+}
+
+.heading-cues {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .step-badge {
@@ -664,6 +690,20 @@ textarea {
 .tag.no {
   background: #fdecec;
   color: #9d3030;
+}
+
+.meta-pill.pending {
+  background: #fff4e6;
+  color: #8a5918;
+}
+
+.control-card.delegated {
+  border-left: 3px solid #95b8d6;
+}
+
+.control-card.delegated-pending {
+  border-left: 3px solid #f0b972;
+  box-shadow: inset 0 0 0 1px #fde2be;
 }
 
 .evidence {

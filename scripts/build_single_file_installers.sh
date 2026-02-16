@@ -9,6 +9,7 @@ SEVENZIP_DIR="$ROOT_DIR/tools/7zip"
 SEVENZIP_BIN="$SEVENZIP_DIR/mac/7zz"
 SEVENZIP_WIN_PACKAGE="$SEVENZIP_DIR/7zip-win-x64.exe"
 SEVENZIP_WIN_SFX="$SEVENZIP_DIR/win/7z.sfx"
+BUILD_WINDOWS_EXE="${BUILD_WINDOWS_EXE:-0}"
 
 ensure_7zip_tools() {
   if [[ ! -x "$SEVENZIP_BIN" ]]; then
@@ -54,133 +55,34 @@ if [[ ! -f "$TMP_DIR/payload/Align42.html" ]]; then
   exit 1
 fi
 
-(cd "$TMP_DIR/payload" && zip -qr "$TMP_DIR/align42_payload.zip" .)
-PAYLOAD_B64="$(base64 < "$TMP_DIR/align42_payload.zip")"
-
-MAC_INSTALLER="$DIST_DIR/Align42-Installer-macOS.command"
+MAC_ZIP_INSTALLER="$DIST_DIR/Align42-Installer-macOS.zip"
 WIN_ZIP_INSTALLER="$DIST_DIR/Align42-Installer-Windows.zip"
 WIN_EXE_INSTALLER="$DIST_DIR/Align42-Installer-Windows.exe"
 
-cat > "$MAC_INSTALLER" <<EOF
+MAC_STAGE="$TMP_DIR/macos_installer/Align42"
+mkdir -p "$MAC_STAGE"
+rsync -a "$TMP_DIR/payload/" "$MAC_STAGE/"
+
+# Stamp with package-level installation scope for clean local storage isolation.
+MAC_INSTALL_ID="pkg_$(date +%Y%m%d%H%M%S)_$RANDOM"
+perl -0777 -pe "s/__ALIGN42_INSTALL_ID__/${MAC_INSTALL_ID}/g; s/__ALIGN42_INSTALL_COUNTRY__//g" "$MAC_STAGE/app.js" > "$MAC_STAGE/.app.js.tmp"
+mv "$MAC_STAGE/.app.js.tmp" "$MAC_STAGE/app.js"
+
+cat > "$TMP_DIR/macos_installer/Open Align42 Home.command" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-
-APP_NAME="Align42"
-WORK_DIR="\$(mktemp -d)"
-trap 'rm -rf "\$WORK_DIR"' EXIT
-
-country_from_region_code() {
-  case "\${1^^}" in
-    AU) printf '%s\n' "Australia" ;;
-    CA) printf '%s\n' "Canada" ;;
-    FR) printf '%s\n' "France" ;;
-    DE) printf '%s\n' "Germany" ;;
-    IN) printf '%s\n' "India" ;;
-    IE) printf '%s\n' "Ireland" ;;
-    JP) printf '%s\n' "Japan" ;;
-    NL) printf '%s\n' "Netherlands" ;;
-    NZ) printf '%s\n' "New Zealand" ;;
-    SG) printf '%s\n' "Singapore" ;;
-    ZA) printf '%s\n' "South Africa" ;;
-    ES) printf '%s\n' "Spain" ;;
-    SE) printf '%s\n' "Sweden" ;;
-    CH) printf '%s\n' "Switzerland" ;;
-    AE) printf '%s\n' "United Arab Emirates" ;;
-    GB|UK) printf '%s\n' "United Kingdom" ;;
-    US) printf '%s\n' "United States" ;;
-    *) printf '%s\n' "" ;;
-  esac
-}
-
-detect_install_country() {
-  local locale code
-  locale="\$(defaults read -g AppleLocale 2>/dev/null || true)"
-  if [[ "\$locale" =~ [_-]([A-Za-z]{2})([_@].*)?$ ]]; then
-    code="\${BASH_REMATCH[1]}"
-  else
-    locale="\${LANG:-}"
-    if [[ "\$locale" =~ [_-]([A-Za-z]{2})(\..*)?$ ]]; then
-      code="\${BASH_REMATCH[1]}"
-    fi
-  fi
-  country_from_region_code "\$code"
-}
-
-pick_install_base() {
-  local selected
-  if command -v osascript >/dev/null 2>&1; then
-    selected="\$(osascript <<'__OSA__' 2>/dev/null || true
-set chosenFolder to choose folder with prompt "Choose install location for Align42 (an Align42 folder will be created there):"
-POSIX path of chosenFolder
-__OSA__
-)"
-    if [[ -n "\$selected" ]]; then
-      printf '%s\n' "\${selected%/}"
-      return 0
-    fi
-  fi
-
-  printf 'Enter install location path (Align42 folder will be created there): '
-  read -r selected
-  selected="\${selected:-\$HOME/Applications}"
-  printf '%s\n' "\${selected%/}"
-}
-
-BASE_DIR="\$(pick_install_base)"
-TARGET_DIR="\$BASE_DIR/\$APP_NAME"
-
-mkdir -p "\$TARGET_DIR"
-
-PAYLOAD_B64="\$WORK_DIR/payload.b64"
-PAYLOAD_ZIP="\$WORK_DIR/payload.zip"
-
-cat > "\$PAYLOAD_B64" <<'__PAYLOAD_B64__'
-$PAYLOAD_B64
-__PAYLOAD_B64__
-
-if base64 --help 2>&1 | grep -q -- "-D"; then
-  base64 -D < "\$PAYLOAD_B64" > "\$PAYLOAD_ZIP"
-else
-  base64 -d < "\$PAYLOAD_B64" > "\$PAYLOAD_ZIP"
-fi
-
-unzip -oq "\$PAYLOAD_ZIP" -d "\$TARGET_DIR"
-
-# Stamp app with installation-specific storage scope for clean first run.
-INSTALL_COUNTRY="\$(detect_install_country)"
-INSTALL_ID="inst_\$(date +%Y%m%d%H%M%S)_\$RANDOM"
-perl -0777 -pe "s/__ALIGN42_INSTALL_ID__/\${INSTALL_ID}/g; s/__ALIGN42_INSTALL_COUNTRY__/\${INSTALL_COUNTRY}/g" "\$TARGET_DIR/app.js" > "\$TARGET_DIR/.app.js.tmp"
-mv "\$TARGET_DIR/.app.js.tmp" "\$TARGET_DIR/app.js"
-
-# Verify required app files exist before creating launcher/opening app.
-required_files=(
-  "Align42.html"
-  "app.js"
-  "styles.css"
-  "logo-align42.svg"
-  "standards.html"
-)
-for rel in "\${required_files[@]}"; do
-  if [[ ! -f "\$TARGET_DIR/\$rel" ]]; then
-    echo "Installation verification failed: missing \$rel" >&2
-    exit 1
-  fi
-done
-
-cat > "\$TARGET_DIR/Launch Align42.command" <<'__LAUNCHER__'
-#!/usr/bin/env bash
-set -euo pipefail
-DIR="\$(cd "\$(dirname "\$0")" && pwd)"
-open "\$DIR/Align42.html"
-__LAUNCHER__
-chmod +x "\$TARGET_DIR/Launch Align42.command"
-
-echo "Align42 installed to: \$TARGET_DIR"
-echo "Use: \$TARGET_DIR/Launch Align42.command"
-
-open "\$TARGET_DIR/Align42.html" >/dev/null 2>&1 || true
+DIR="$(cd "$(dirname "$0")" && pwd)"
+open "$DIR/Align42/Align42.html"
 EOF
-chmod +x "$MAC_INSTALLER"
+chmod +x "$TMP_DIR/macos_installer/Open Align42 Home.command"
+
+cat > "$TMP_DIR/macos_installer/README-Mac-Install.txt" <<'EOF'
+1) Extract this zip to your target directory.
+2) Open "Open Align42 Home.command" or open Align42/Align42.html directly.
+EOF
+
+rm -f "$MAC_ZIP_INSTALLER"
+(cd "$TMP_DIR/macos_installer" && zip -qr "$MAC_ZIP_INSTALLER" "Align42" "Open Align42 Home.command" "README-Mac-Install.txt")
 
 WIN_STAGE="$TMP_DIR/windows_installer/Align42"
 mkdir -p "$WIN_STAGE"
@@ -245,14 +147,15 @@ with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
             zf.writestr(info, f.read())
 PY
 
-# Build Windows SFX (.exe) installer as a second distribution option.
-ensure_7zip_tools
-WIN_PAYLOAD_7Z="$TMP_DIR/windows_payload.7z"
-WIN_SFX_CONFIG="$TMP_DIR/windows_sfx_config.txt"
+# Build Windows SFX (.exe) installer only when explicitly requested.
+if [[ "$BUILD_WINDOWS_EXE" == "1" ]]; then
+  ensure_7zip_tools
+  WIN_PAYLOAD_7Z="$TMP_DIR/windows_payload.7z"
+  WIN_SFX_CONFIG="$TMP_DIR/windows_sfx_config.txt"
 
-(cd "$TMP_DIR/windows_installer" && "$SEVENZIP_BIN" a -t7z -mx=9 "$WIN_PAYLOAD_7Z" "Align42" "Open Align42 Home.cmd" "README-Windows-Install.txt" >/dev/null)
+  (cd "$TMP_DIR/windows_installer" && "$SEVENZIP_BIN" a -t7z -mx=9 "$WIN_PAYLOAD_7Z" "Align42" "Open Align42 Home.cmd" "README-Windows-Install.txt" >/dev/null)
 
-cat > "$WIN_SFX_CONFIG" <<'EOF'
+  cat > "$WIN_SFX_CONFIG" <<'EOF'
 ;!@Install@!UTF-8!
 Title="Align42 Installer"
 BeginPrompt="Align42 will be extracted into this folder and the home page will open."
@@ -262,7 +165,8 @@ RunProgram="Open Align42 Home.cmd"
 ;!@InstallEnd@!
 EOF
 
-cat "$SEVENZIP_WIN_SFX" "$WIN_SFX_CONFIG" "$WIN_PAYLOAD_7Z" > "$WIN_EXE_INSTALLER"
+  cat "$SEVENZIP_WIN_SFX" "$WIN_SFX_CONFIG" "$WIN_PAYLOAD_7Z" > "$WIN_EXE_INSTALLER"
+fi
 
 # Remove legacy Windows bat installer artifact if present.
 rm -f "$DIST_DIR/Align42-Installer-Windows.bat"
@@ -271,14 +175,24 @@ rm -f "$DIST_DIR/Align42-Installer-Windows.bat"
 CHECKSUM_FILE="$DIST_DIR/SHA256SUMS.txt"
 (
   cd "$DIST_DIR"
-  shasum -a 256 \
-    "Align42-Installer-macOS.command" \
-    "Align42-Installer-Windows.zip" \
-    "Align42-Installer-Windows.exe" > "$CHECKSUM_FILE"
+  if [[ "$BUILD_WINDOWS_EXE" == "1" ]]; then
+    shasum -a 256 \
+      "Align42-Installer-macOS.zip" \
+      "Align42-Installer-Windows.zip" \
+      "Align42-Installer-Windows.exe" > "$CHECKSUM_FILE"
+  else
+    shasum -a 256 \
+      "Align42-Installer-macOS.zip" \
+      "Align42-Installer-Windows.zip" > "$CHECKSUM_FILE"
+  fi
 )
 
 echo "Created installers:"
-echo "  $MAC_INSTALLER"
+echo "  $MAC_ZIP_INSTALLER"
 echo "  $WIN_ZIP_INSTALLER"
-echo "  $WIN_EXE_INSTALLER"
+if [[ "$BUILD_WINDOWS_EXE" == "1" ]]; then
+  echo "  $WIN_EXE_INSTALLER"
+else
+  echo "  $WIN_EXE_INSTALLER (deprecated, not rebuilt; set BUILD_WINDOWS_EXE=1 to build)"
+fi
 echo "  $CHECKSUM_FILE"

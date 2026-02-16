@@ -80,6 +80,21 @@ Installed hooks:
 - Used for:
   - delegation requests
 
+## Build installers
+
+Build current supported installers (macOS zip and Windows zip):
+
+```bash
+./scripts/build_single_file_installers.sh
+```
+
+Windows `.exe` installer is deprecated for now and is not rebuilt by default.
+To build it explicitly in future:
+
+```bash
+BUILD_WINDOWS_EXE=1 ./scripts/build_single_file_installers.sh
+```
+
 ## Notes
 
 - File attachments in responses are stored as local metadata references in the browser state.
