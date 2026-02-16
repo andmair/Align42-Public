@@ -120,6 +120,13 @@ const COUNTRY_BY_TIMEZONE = {
   "America/Regina": "Canada",
   "America/St_Johns": "Canada"
 };
+const ORG_SIZE_BANDS = [
+  "Micro enterprise (1-9 employees)",
+  "Small enterprise (10-49 employees)",
+  "Medium enterprise (50-249 employees)",
+  "Large enterprise (250-999 employees)",
+  "Very large / enterprise-scale (1000+ employees)"
+];
 
 const sections = [
   {
@@ -130,9 +137,8 @@ const sections = [
     fields: [
       { key: "orgName", label: "Organisation name", type: "text", required: true, starter: "Example: Northbridge Financial Services" },
       { key: "businessOverview", label: "Business Overview", type: "textarea", required: true, starter: "Summarize your organisation's purpose/mission, primary markets/geographies served, type of business (e.g., B2B, B2C, public sector), and core products/services." },
-      { key: "industry", label: "Industry", type: "text", required: true, starter: "Example: Banking, Healthcare, Retail, Public Sector" },
-      { key: "industryClassification", label: "Industry sector classification (ISIC Rev.5)", type: "industry_classification", required: true },
-      { key: "size", label: "Organisation size (employees)", type: "number", required: true, starter: "Example: 2500" },
+      { key: "industryClassification", label: "Industry sector classification", type: "industry_classification", required: true },
+      { key: "size", label: "Organisation size band", type: "select", required: true, options: ORG_SIZE_BANDS },
       { key: "platforms", label: "Primary IT platforms", type: "textarea", starter: "List cloud providers, ERP/CRM platforms, data stack, developer platforms, and collaboration tools." },
       { key: "roles", label: "Key roles with accountability for IT, Risk and Compliance", type: "textarea", required: true, starter: "List accountable roles and responsibilities, e.g., CIO (IT operations), CRO (risk framework), CCO (regulatory compliance), CISO (security controls)." },
       { key: "geoRegScope", label: "Regulatory and geographic scope", type: "geo_reg_scope", required: true }
@@ -630,6 +636,21 @@ function escapeHtml(str) {
     .replaceAll("'", "&#39;");
 }
 
+function headingCase(text) {
+  const small = new Set(["a", "an", "and", "as", "at", "by", "for", "in", "of", "on", "or", "the", "to", "v", "vs", "via", "with"]);
+  return `${text || ""}`.split(/\s+/).map((token, i, arr) => {
+    const m = token.match(/^([^A-Za-z0-9]*)([A-Za-z0-9][A-Za-z0-9&/.-]*)([^A-Za-z0-9]*)$/);
+    if (!m) return token;
+    const [, lead, core, tail] = m;
+    if (/^[A-Z0-9&/.-]+$/.test(core) || /[A-Z].*[A-Z]/.test(core)) return token;
+    const lower = core.toLowerCase();
+    const out = (i > 0 && i < arr.length - 1 && small.has(lower))
+      ? lower
+      : `${lower.charAt(0).toUpperCase()}${lower.slice(1)}`;
+    return `${lead}${out}${tail}`;
+  }).join(" ");
+}
+
 function currentAssessment() {
   const found = state.assessments.find((a) => a.id === state.currentAssessmentId) || null;
   if (found) ensureAssessmentData(found);
@@ -756,7 +777,7 @@ function createSimpleModeDemoAssessment() {
     orgName: "Southern Cross Intelligent Systems Pty Ltd",
     businessOverview: "Australian mid-sized technology manufacturer designing and producing industrial vision sensors, edge-AI controllers, and smart factory monitoring platforms for ANZ and Southeast Asia markets. Core business is B2B hardware-plus-software solutions for manufacturing and logistics clients.",
     industry: "Technology manufacturing (industrial automation and IoT devices)",
-    size: 840,
+    size: "Large enterprise (250-999 employees)",
     platforms: "Microsoft 365, Azure, AWS for analytics workloads, SAP Business One, Jira/Confluence, GitHub Enterprise, Power BI, CrowdStrike.",
     roles: "CIO (enterprise IT and digital delivery), Head of Engineering (product and model development), Risk Manager (enterprise risk), Compliance Manager (regulatory obligations), Legal Counsel (contracts/privacy), Security Lead (cyber controls).",
     country: "Australia",
@@ -811,6 +832,10 @@ function createSimpleModeDemoAssessment() {
 
 function ensureAssessmentData(assessment) {
   if (!assessment.data) assessment.data = defaultAssessmentData();
+  if (assessment.data.context) {
+    const normalizedSize = normalizeOrgSizeBand(assessment.data.context.size);
+    if (normalizedSize) assessment.data.context.size = normalizedSize;
+  }
   if (!assessment.data.evidence) assessment.data.evidence = {};
   if (!assessment.data.visitedSections) assessment.data.visitedSections = {};
   if (!assessment.data.delegates) assessment.data.delegates = {};
@@ -1137,6 +1162,28 @@ function inferSectorFromIndustryText(industryText) {
 function inferSectorFromBusinessContext(context = {}) {
   const combined = [context.orgName, context.businessOverview, context.industry].filter(Boolean).join(" ");
   return inferSectorFromIndustryText(combined);
+}
+
+function normalizeOrgSizeBand(value) {
+  const txt = `${value || ""}`.trim();
+  if (!txt) return "";
+  if (ORG_SIZE_BANDS.includes(txt)) return txt;
+  const n = Number(txt);
+  if (Number.isFinite(n) && n > 0) {
+    if (n <= 9) return ORG_SIZE_BANDS[0];
+    if (n <= 49) return ORG_SIZE_BANDS[1];
+    if (n <= 249) return ORG_SIZE_BANDS[2];
+    if (n <= 999) return ORG_SIZE_BANDS[3];
+    return ORG_SIZE_BANDS[4];
+  }
+  const lower = txt.toLowerCase();
+  if (lower.includes("very large") || lower.includes("enterprise-scale")) return ORG_SIZE_BANDS[4];
+  if (lower.includes("micro")) return ORG_SIZE_BANDS[0];
+  if (lower.includes("small")) return ORG_SIZE_BANDS[1];
+  if (lower.includes("medium")) return ORG_SIZE_BANDS[2];
+  if (lower.includes("large enterprise") || lower.includes("large")) return ORG_SIZE_BANDS[3];
+  if (lower.includes("enterprise")) return ORG_SIZE_BANDS[4];
+  return "";
 }
 
 function baseFrameworksForContext(context) {
@@ -2550,10 +2597,11 @@ function renderAssessment(assessment) {
                 : ds.delegatedControls > 0
                   ? `<span class="section-cue section-cue-delegated">${ds.delegatedControls} delegated</span>`
                   : "";
+              const sectionHeading = headingCase(s.title);
               const heading = canJump
-                ? `<span class="section-link">${i + 1}. ${escapeHtml(s.title)}</span>${cue}`
-                : `<span class="section-static">${i + 1}. ${escapeHtml(s.title)}</span>${cue}`;
-              return `<div class="section-progress-item ${stateClass} ${currentClass} ${canJump ? "jumpable" : ""}" ${canJump ? `data-jump-section="${i}" role="button" tabindex="0" aria-label="Go to ${escapeHtml(s.title)}"` : ""}><div class="title">${heading}<strong>${p}%</strong></div><div class="progress-bar"><div style="width:${p}%"></div></div></div>`;
+                ? `<span class="section-link">${i + 1}. ${escapeHtml(sectionHeading)}</span>${cue}`
+                : `<span class="section-static">${i + 1}. ${escapeHtml(sectionHeading)}</span>${cue}`;
+              return `<div class="section-progress-item ${stateClass} ${currentClass} ${canJump ? "jumpable" : ""}" ${canJump ? `data-jump-section="${i}" role="button" tabindex="0" aria-label="Go to ${escapeHtml(sectionHeading)}"` : ""}><div class="title">${heading}<strong>${p}%</strong></div><div class="progress-bar"><div style="width:${p}%"></div></div></div>`;
             }).join("")}
           </div>
           <div class="score-wrap"><div>Weighted alignment score</div><div class="score-pill">${score}%</div></div>
@@ -2636,13 +2684,13 @@ function renderContext(assessment, section) {
   const sectionInsightView = sectionInsight || heuristicSectionInsights(assessment, section);
 
   root.innerHTML = `
-    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(section.title)}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div></div>
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(headingCase(section.title))}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div></div>
     ${section.fields.map((f) => {
       const val = assessment.data.context[f.key] || "";
       if (f.type === "geo_reg_scope") {
         return `
           <div class="question question-focus">
-            <h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3>
+            <h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3>
             <label>Country
               <select data-field="country">
                 <option value="">Select country</option>
@@ -2699,7 +2747,7 @@ function renderContext(assessment, section) {
       if (f.type === "industry_classification") {
         return `
           <div class="question question-lite">
-            <h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3>
+            <h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3>
             <div class="row">
               <label>Broad industry (ISIC Rev.5 section)
                 <select data-field="industrySector">
@@ -2714,13 +2762,12 @@ function renderContext(assessment, section) {
                 </select>
               </label>
             </div>
-            ${inferredSector ? `<p class="hint">Inferred from business name and overview: <strong>${escapeHtml(inferredSector)}</strong>${!ctx.industrySector ? " (auto-selected)" : ""}</p>` : `<p class="hint">Add a clearer business name/overview to improve automatic ISIC inference.</p>`}
           </div>
         `;
       }
-      if (f.type === "textarea") return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><textarea data-field="${f.key}" placeholder="${escapeHtml(f.starter || "Provide response")}">${escapeHtml(val)}</textarea></div>`;
-      if (f.type === "select") return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><select data-field="${f.key}">${f.options.map((o) => `<option value="${escapeHtml(o)}" ${val === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select></div>`;
-      return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><input type="${f.type}" data-field="${f.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(f.starter || "Provide response")}" /></div>`;
+      if (f.type === "textarea") return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><textarea data-field="${f.key}" placeholder="${escapeHtml(f.starter || "Provide response")}">${escapeHtml(val)}</textarea></div>`;
+      if (f.type === "select") return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><select data-field="${f.key}">${f.options.map((o) => `<option value="${escapeHtml(o)}" ${val === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select></div>`;
+      return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><input type="${f.type}" data-field="${f.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(f.starter || "Provide response")}" /></div>`;
     }).join("")}
     <div class="question question-insight">
       <h3>🧠 Section Improvement Loop</h3>
@@ -2751,7 +2798,7 @@ function renderContext(assessment, section) {
         assessment.data.context.localisationSource = "manual";
         assessment.data.context.frameworkSuggestions = baseFrameworksForContext(assessment.data.context);
       }
-      if (["orgName", "businessOverview", "industry"].includes(field) && !assessment.data.context.industrySector) {
+      if (["orgName", "businessOverview"].includes(field) && !assessment.data.context.industrySector) {
         const inferred = inferSectorFromBusinessContext(assessment.data.context);
         if (inferred) assessment.data.context.industrySector = inferred;
       }
@@ -2760,7 +2807,7 @@ function renderContext(assessment, section) {
         if (!options.includes(assessment.data.context.industrySubSector || "")) assessment.data.context.industrySubSector = "";
       }
       scheduleAssessmentSave(assessment);
-      if (["country", "industry", "industrySector", "industrySubSector", "orgName", "businessOverview"].includes(field)) renderContext(assessment, section);
+      if (["country", "industrySector", "industrySubSector", "orgName", "businessOverview"].includes(field)) renderContext(assessment, section);
     });
   });
 
@@ -2911,7 +2958,7 @@ function renderControls(assessment, section) {
   const sectionInsightView = sectionInsight || heuristicSectionInsights(assessment, section);
 
   root.innerHTML = `
-    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(section.title)}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div><div class="heading-cues">${delegationSummary.delegatedControls > 0 ? `<span class="tag info">Delegated controls: ${delegationSummary.delegatedControls}</span>` : ""}${delegationSummary.pendingControls > 0 ? `<span class="tag warn">Pending feedback: ${delegationSummary.pendingControls}</span>` : ""}</div></div>
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">${escapeHtml(headingCase(section.title))}</h2><p class="section-desc">${escapeHtml(section.description)}</p></div><div class="heading-cues">${delegationSummary.delegatedControls > 0 ? `<span class="tag info">Delegated controls: ${delegationSummary.delegatedControls}</span>` : ""}${delegationSummary.pendingControls > 0 ? `<span class="tag warn">Pending feedback: ${delegationSummary.pendingControls}</span>` : ""}</div></div>
 
     ${sectionFindings.length ? `<div class="question question-alert">
       <h3>⚠ Consistency and Dependency Findings</h3>
