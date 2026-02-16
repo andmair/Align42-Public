@@ -90,16 +90,6 @@ Build current supported installers (macOS zip and Windows zip):
 
 The ZIP installers are intentionally packaged as static, non-executable web assets to reduce OS security/quarantine prompts when downloaded from GitHub.
 
-Build a clean folder-based distribution (for copying directly to another device):
-
-```bash
-./scripts/build_folder_distribution.sh
-```
-
-Output:
-
-- `dist/files/Align42`
-
 Windows `.exe` installer is deprecated for now and is not rebuilt by default.
 To build it explicitly in future:
 
