@@ -26,7 +26,7 @@ const ISIC_SECTORS = [
   "B: Mining and quarrying",
   "C: Manufacturing",
   "D: Electricity, gas, steam and air conditioning supply",
-  "E: Water supply; sewerage, waste management and remediation",
+  "E: Water supply; sewerage, waste management and remediation activities",
   "F: Construction",
   "G: Wholesale and retail trade; repair of motor vehicles and motorcycles",
   "H: Transportation and storage",
@@ -40,8 +40,33 @@ const ISIC_SECTORS = [
   "P: Education",
   "Q: Human health and social work activities",
   "R: Arts, entertainment and recreation",
-  "S: Other service activities"
+  "S: Other service activities",
+  "T: Activities of households as employers; undifferentiated goods- and services-producing activities of households for own use",
+  "U: Activities of extraterritorial organizations and bodies"
 ];
+const ISIC_SECONDARY_BY_BROAD = {
+  "A: Agriculture, forestry and fishing": ["A01: Crop and animal production, hunting and related service activities", "A02: Forestry and logging", "A03: Fishing and aquaculture"],
+  "B: Mining and quarrying": ["B05: Mining of coal and lignite", "B06: Extraction of crude petroleum and natural gas", "B07: Mining of metal ores", "B08: Other mining and quarrying", "B09: Mining support service activities"],
+  "C: Manufacturing": ["C10: Manufacture of food products", "C11: Manufacture of beverages", "C13: Manufacture of textiles", "C20: Manufacture of chemicals and chemical products", "C21: Manufacture of basic pharmaceutical products and pharmaceutical preparations", "C25: Manufacture of fabricated metal products", "C26: Manufacture of computer, electronic and optical products", "C27: Manufacture of electrical equipment", "C28: Manufacture of machinery and equipment n.e.c.", "C29: Manufacture of motor vehicles, trailers and semi-trailers", "C30: Manufacture of other transport equipment", "C31: Manufacture of furniture", "C32: Other manufacturing"],
+  "D: Electricity, gas, steam and air conditioning supply": ["D35: Electricity, gas, steam and air conditioning supply"],
+  "E: Water supply; sewerage, waste management and remediation activities": ["E36: Water collection, treatment and supply", "E37: Sewerage", "E38: Waste collection, treatment and disposal activities; materials recovery", "E39: Remediation activities and other waste management services"],
+  "F: Construction": ["F41: Construction of buildings", "F42: Civil engineering", "F43: Specialized construction activities"],
+  "G: Wholesale and retail trade; repair of motor vehicles and motorcycles": ["G45: Wholesale and retail trade and repair of motor vehicles and motorcycles", "G46: Wholesale trade, except of motor vehicles and motorcycles", "G47: Retail trade, except of motor vehicles and motorcycles"],
+  "H: Transportation and storage": ["H49: Land transport and transport via pipelines", "H50: Water transport", "H51: Air transport", "H52: Warehousing and support activities for transportation", "H53: Postal and courier activities"],
+  "I: Accommodation and food service activities": ["I55: Accommodation", "I56: Food and beverage service activities"],
+  "J: Information and communication": ["J58: Publishing activities", "J59: Motion picture, video and television programme production, sound recording and music publishing activities", "J60: Programming and broadcasting activities", "J61: Telecommunications", "J62: Computer programming, consultancy and related activities", "J63: Information service activities"],
+  "K: Financial and insurance activities": ["K64: Financial service activities, except insurance and pension funding", "K65: Insurance, reinsurance and pension funding, except compulsory social security", "K66: Activities auxiliary to financial service and insurance activities"],
+  "L: Real estate activities": ["L68: Real estate activities"],
+  "M: Professional, scientific and technical activities": ["M69: Legal and accounting activities", "M70: Activities of head offices; management consultancy activities", "M71: Architectural and engineering activities; technical testing and analysis", "M72: Scientific research and development", "M73: Advertising and market research", "M74: Other professional, scientific and technical activities", "M75: Veterinary activities"],
+  "N: Administrative and support service activities": ["N77: Rental and leasing activities", "N78: Employment activities", "N79: Travel agency, tour operator and other reservation service and related activities", "N80: Security and investigation activities", "N81: Services to buildings and landscape activities", "N82: Office administrative, office support and other business support activities"],
+  "O: Public administration and defence; compulsory social security": ["O84: Public administration and defence; compulsory social security"],
+  "P: Education": ["P85: Education"],
+  "Q: Human health and social work activities": ["Q86: Human health activities", "Q87: Residential care activities", "Q88: Social work activities without accommodation"],
+  "R: Arts, entertainment and recreation": ["R90: Creative, arts and entertainment activities", "R91: Libraries, archives, museums and other cultural activities", "R92: Gambling and betting activities", "R93: Sports activities and amusement and recreation activities"],
+  "S: Other service activities": ["S94: Activities of membership organizations", "S95: Repair of computers and personal and household goods", "S96: Other personal service activities"],
+  "T: Activities of households as employers; undifferentiated goods- and services-producing activities of households for own use": ["T97: Activities of households as employers of domestic personnel", "T98: Undifferentiated goods- and services-producing activities of private households for own use"],
+  "U: Activities of extraterritorial organizations and bodies": ["U99: Activities of extraterritorial organizations and bodies"]
+};
 
 const COUNTRY_BY_REGION_CODE = {
   AU: "Australia",
@@ -106,6 +131,7 @@ const sections = [
       { key: "orgName", label: "Organisation name", type: "text", required: true, starter: "Example: Northbridge Financial Services" },
       { key: "businessOverview", label: "Business Overview", type: "textarea", required: true, starter: "Summarize your organisation's purpose/mission, primary markets/geographies served, type of business (e.g., B2B, B2C, public sector), and core products/services." },
       { key: "industry", label: "Industry", type: "text", required: true, starter: "Example: Banking, Healthcare, Retail, Public Sector" },
+      { key: "industryClassification", label: "Industry sector classification (ISIC Rev.5)", type: "industry_classification", required: true },
       { key: "size", label: "Organisation size (employees)", type: "number", required: true, starter: "Example: 2500" },
       { key: "platforms", label: "Primary IT platforms", type: "textarea", starter: "List cloud providers, ERP/CRM platforms, data stack, developer platforms, and collaboration tools." },
       { key: "roles", label: "Key roles with accountability for IT, Risk and Compliance", type: "textarea", required: true, starter: "List accountable roles and responsibilities, e.g., CIO (IT operations), CRO (risk framework), CCO (regulatory compliance), CISO (security controls)." },
@@ -736,6 +762,7 @@ function createSimpleModeDemoAssessment() {
     country: "Australia",
     stateProvince: "Victoria",
     industrySector: "C: Manufacturing",
+    industrySubSector: "C26: Manufacture of computer, electronic and optical products",
     applicableFrameworks: [
       "ISO/IEC 42001",
       "ISO/IEC 23894 (AI risk management)",
@@ -985,7 +1012,13 @@ function renderIso42001References(control) {
 
 function isContextFieldComplete(context, field) {
   if (field.type === "geo_reg_scope") {
-    return !!(`${context.country || ""}`.trim() && `${context.industrySector || inferSectorFromIndustryText(context.industry || "")}`.trim());
+    return !!(`${context.country || ""}`.trim());
+  }
+  if (field.type === "industry_classification") {
+    const broad = `${context.industrySector || inferSectorFromBusinessContext(context)}`.trim();
+    const options = ISIC_SECONDARY_BY_BROAD[broad] || [];
+    if (!broad) return false;
+    return !options.length || !!(`${context.industrySubSector || ""}`.trim());
   }
   return `${context[field.key] || ""}`.trim().length > 0;
 }
@@ -1101,6 +1134,11 @@ function inferSectorFromIndustryText(industryText) {
   return "";
 }
 
+function inferSectorFromBusinessContext(context = {}) {
+  const combined = [context.orgName, context.businessOverview, context.industry].filter(Boolean).join(" ");
+  return inferSectorFromIndustryText(combined);
+}
+
 function baseFrameworksForContext(context) {
   const country = context.country || "";
   const sector = context.industrySector || "";
@@ -1148,7 +1186,7 @@ async function generateFrameworksWithAi(context) {
 function personalizedControlHint(assessment, control) {
   const c = assessment.data.context || {};
   const region = [c.country, c.stateProvince].filter(Boolean).join(", ");
-  const sector = c.industrySector || inferSectorFromIndustryText(c.industry || "");
+  const sector = c.industrySector || inferSectorFromBusinessContext(c);
   const frameworks = getApplicableFrameworks(c).slice(0, 3).join(", ");
   const parts = [];
   if (region) parts.push(`geography: ${region}`);
@@ -1342,9 +1380,10 @@ function explainabilityDetails(assessment, control, interpretStructured) {
   if (ctx.stateProvince) explicit.push(`state/province: ${ctx.stateProvince}`);
   if (ctx.industry) explicit.push(`industry text: ${ctx.industry}`);
   if (ctx.industrySector) explicit.push(`industry sector: ${ctx.industrySector}`);
+  if (ctx.industrySubSector) explicit.push(`industry secondary classification: ${ctx.industrySubSector}`);
   if (frameworks.length) explicit.push(`frameworks: ${frameworks.join("; ")}`);
-  const inferredSector = inferSectorFromIndustryText(ctx.industry || "");
-  if (!ctx.industrySector && inferredSector) inferred.push(`industry sector inferred from industry text: ${inferredSector}`);
+  const inferredSector = inferSectorFromBusinessContext(ctx);
+  if (!ctx.industrySector && inferredSector) inferred.push(`industry sector inferred from business name and overview: ${inferredSector}`);
   if (!frameworks.length) inferred.push("no explicit frameworks selected; recommendations use ISO 42001 baseline assumptions");
   if (!ctx.country) inferred.push("geography not specified; recommendations use global baseline");
   return {
@@ -1589,7 +1628,7 @@ function baselineEvidenceForControl(control) {
 
 function regulatoryMappingForControl(control, context) {
   const frameworks = getApplicableFrameworks(context);
-  const sector = context.industrySector || inferSectorFromIndustryText(context.industry || "");
+  const sector = context.industrySector || inferSectorFromBusinessContext(context);
   const geography = [context.country, context.stateProvince].filter(Boolean).join(", ");
   const obligationMap = frameworkObligationMap();
 
@@ -2317,16 +2356,20 @@ function renderWelcome() {
   });
 
   document.getElementById("aiModeToggle")?.addEventListener("change", (e) => {
+    state.settings.aiDisclaimerAcknowledged = false;
     state.settings.aiMode = e.target.checked;
     state.settings.settingsOpen = e.target.checked;
     saveSettings();
     render();
   });
   document.getElementById("assessmentModeSelect").addEventListener("change", (e) => {
+    const prevMode = state.settings.assessmentMode;
     state.settings.assessmentMode = e.target.value === "advanced" ? "advanced" : "simple";
+    if (state.settings.assessmentMode !== prevMode) state.settings.aiDisclaimerAcknowledged = false;
     if (state.settings.assessmentMode !== "advanced") {
       state.settings.aiMode = false;
       state.settings.settingsOpen = false;
+      state.settings.aiDisclaimerAcknowledged = false;
     }
     saveSettings();
     render();
@@ -2337,14 +2380,23 @@ function renderWelcome() {
     saveSettings();
     render();
   });
+  const clearAiDisclaimerAck = (refresh = false) => {
+    state.settings.aiDisclaimerAcknowledged = false;
+    const check = document.getElementById("aiDisclaimerCheck");
+    if (check) check.checked = false;
+    saveSettings();
+    if (refresh) render();
+  };
   document.getElementById("aiProviderSelect")?.addEventListener("change", (e) => {
     state.settings.aiProvider = e.target.value;
-    saveSettings();
-    render();
+    clearAiDisclaimerAck(true);
   });
   document.getElementById("aiCredentialStorageSelect")?.addEventListener("change", (e) => {
     state.settings.aiCredentialStorage = e.target.value === "persistent" ? "persistent" : "session";
-    saveSettings();
+    clearAiDisclaimerAck(false);
+  });
+  ["openaiKeyInput", "anthropicKeyInput", "geminiKeyInput", "azureApiKeyInput", "azureEndpointInput", "azureDeploymentInput", "azureApiVersionInput"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => clearAiDisclaimerAck(false));
   });
 
   document.getElementById("testAiSettingsBtn")?.addEventListener("click", async () => {
@@ -2570,8 +2622,10 @@ function renderContext(assessment, section) {
   const ctx = assessment.data.context || {};
   const selectedCountry = ctx.country || "";
   const stateOptions = STATE_OPTIONS[selectedCountry] || [];
-  const inferredSector = inferSectorFromIndustryText(ctx.industry || "");
+  const inferredSector = inferSectorFromBusinessContext(ctx);
   const chosenSector = ctx.industrySector || inferredSector || "";
+  const secondaryOptions = ISIC_SECONDARY_BY_BROAD[chosenSector] || [];
+  const chosenSecondary = ctx.industrySubSector || "";
   if (inferredSector && !ctx.industrySector) ctx.industrySector = inferredSector;
   if (!Array.isArray(ctx.applicableFrameworks)) ctx.applicableFrameworks = [];
   const frameworks = getApplicableFrameworks(ctx);
@@ -2609,11 +2663,6 @@ function renderContext(assessment, section) {
                 <input type="text" data-field="stateProvince" value="${escapeHtml(ctx.stateProvince || "")}" placeholder="Enter state/province/region if relevant" />
               </label>`
             }
-            <label>Industry sector (ISIC aligned)
-              <input data-field="industrySector" list="isicSectorOptions" value="${escapeHtml(chosenSector)}" placeholder="Search and select an industry sector" />
-            </label>
-            <datalist id="isicSectorOptions">${ISIC_SECTORS.map((s) => `<option value="${escapeHtml(s)}"></option>`).join("")}</datalist>
-            ${inferredSector ? `<p class="hint">Suggested from industry description: <strong>${escapeHtml(inferredSector)}</strong></p>` : `<p class="hint">Enter your industry above to receive a suggested sector.</p>`}
 
             ${aiEnabled ? `
               <div class="evidence">
@@ -2647,6 +2696,28 @@ function renderContext(assessment, section) {
           </div>
         `;
       }
+      if (f.type === "industry_classification") {
+        return `
+          <div class="question question-lite">
+            <h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3>
+            <div class="row">
+              <label>Broad industry (ISIC Rev.5 section)
+                <select data-field="industrySector">
+                  <option value="">Select broad industry</option>
+                  ${ISIC_SECTORS.map((s) => `<option value="${escapeHtml(s)}" ${chosenSector === s ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+                </select>
+              </label>
+              <label>Secondary classification
+                <select data-field="industrySubSector">
+                  <option value="">Select secondary classification</option>
+                  ${secondaryOptions.map((s) => `<option value="${escapeHtml(s)}" ${chosenSecondary === s ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}
+                </select>
+              </label>
+            </div>
+            ${inferredSector ? `<p class="hint">Inferred from business name and overview: <strong>${escapeHtml(inferredSector)}</strong>${!ctx.industrySector ? " (auto-selected)" : ""}</p>` : `<p class="hint">Add a clearer business name/overview to improve automatic ISIC inference.</p>`}
+          </div>
+        `;
+      }
       if (f.type === "textarea") return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><textarea data-field="${f.key}" placeholder="${escapeHtml(f.starter || "Provide response")}">${escapeHtml(val)}</textarea></div>`;
       if (f.type === "select") return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><select data-field="${f.key}">${f.options.map((o) => `<option value="${escapeHtml(o)}" ${val === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select></div>`;
       return `<div class="question question-lite"><h3>${escapeHtml(f.label)}${f.required ? " *" : ""}</h3><input type="${f.type}" data-field="${f.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(f.starter || "Provide response")}" /></div>`;
@@ -2671,7 +2742,8 @@ function renderContext(assessment, section) {
   root.querySelectorAll("[data-field]").forEach((el) => {
     const eventName = el.tagName === "SELECT" ? "change" : "input";
     el.addEventListener(eventName, (e) => {
-      assessment.data.context[e.target.dataset.field] = e.target.value;
+      const field = e.target.dataset.field;
+      assessment.data.context[field] = e.target.value;
       if (e.target.dataset.field === "country") {
         const selected = e.target.value;
         const states = STATE_OPTIONS[selected] || [];
@@ -2679,12 +2751,16 @@ function renderContext(assessment, section) {
         assessment.data.context.localisationSource = "manual";
         assessment.data.context.frameworkSuggestions = baseFrameworksForContext(assessment.data.context);
       }
-      if (e.target.dataset.field === "industry" && !assessment.data.context.industrySector) {
-        const inferred = inferSectorFromIndustryText(e.target.value);
+      if (["orgName", "businessOverview", "industry"].includes(field) && !assessment.data.context.industrySector) {
+        const inferred = inferSectorFromBusinessContext(assessment.data.context);
         if (inferred) assessment.data.context.industrySector = inferred;
       }
+      if (field === "industrySector") {
+        const options = ISIC_SECONDARY_BY_BROAD[assessment.data.context.industrySector || ""] || [];
+        if (!options.includes(assessment.data.context.industrySubSector || "")) assessment.data.context.industrySubSector = "";
+      }
       scheduleAssessmentSave(assessment);
-      if (["country", "industry", "industrySector"].includes(e.target.dataset.field)) renderContext(assessment, section);
+      if (["country", "industry", "industrySector", "industrySubSector", "orgName", "businessOverview"].includes(field)) renderContext(assessment, section);
     });
   });
 
