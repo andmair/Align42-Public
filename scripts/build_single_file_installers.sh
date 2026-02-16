@@ -68,28 +68,15 @@ MAC_INSTALL_ID="pkg_$(date +%Y%m%d%H%M%S)_$RANDOM"
 perl -0777 -pe "s/__ALIGN42_INSTALL_ID__/${MAC_INSTALL_ID}/g; s/__ALIGN42_INSTALL_COUNTRY__//g" "$MAC_STAGE/app.js" > "$MAC_STAGE/.app.js.tmp"
 mv "$MAC_STAGE/.app.js.tmp" "$MAC_STAGE/app.js"
 
-cat > "$TMP_DIR/macos_installer/Open Align42 Home.command" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-DIR="$(cd "$(dirname "$0")" && pwd)"
-open "$DIR/Align42/Align42.html"
-EOF
-chmod +x "$TMP_DIR/macos_installer/Open Align42 Home.command"
-
 cat > "$TMP_DIR/macos_installer/README-Mac-Install.txt" <<'EOF'
 1) Extract this zip to your target directory.
-2) Open "Open Align42 Home.command" or open Align42/Align42.html directly.
+2) Open Align42/Align42.html in your browser.
 EOF
 
 rm -f "$MAC_ZIP_INSTALLER"
-if command -v ditto >/dev/null 2>&1; then
-  # Native macOS zip writer for maximum Finder/Archive Utility compatibility.
-  (cd "$TMP_DIR" && ditto -c -k --sequesterRsrc --keepParent "macos_installer" "$MAC_ZIP_INSTALLER")
-else
-  python3 - "$TMP_DIR/macos_installer" "$MAC_ZIP_INSTALLER" <<'PY'
+python3 - "$TMP_DIR/macos_installer/Align42" "$MAC_ZIP_INSTALLER" <<'PY'
 import os
 import pathlib
-import stat
 import sys
 import time
 import zipfile
@@ -99,25 +86,24 @@ dst = pathlib.Path(sys.argv[2]).resolve()
 dst.parent.mkdir(parents=True, exist_ok=True)
 
 def normalize_arcname(path: pathlib.Path) -> str:
-    return str(path.relative_to(src)).replace(os.sep, "/")
+    return f"Align42/{str(path.relative_to(src)).replace(os.sep, '/')}"
 
 with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
     for path in sorted(src.rglob("*")):
         if path.is_dir():
+            continue
+        if path.name.startswith("._"):
             continue
         arc = normalize_arcname(path)
         info = zipfile.ZipInfo(arc)
         info.compress_type = zipfile.ZIP_DEFLATED
         mtime = max(path.stat().st_mtime, 315532800)  # ZIP minimum date is 1980-01-01
         info.date_time = time.localtime(mtime)[:6]
-        # Use Unix metadata and preserve executable bit for launch scripts.
-        info.create_system = 3
-        mode = stat.S_IMODE(path.stat().st_mode)
-        info.external_attr = (mode & 0xFFFF) << 16
+        info.create_system = 0
+        info.external_attr = 0
         with path.open("rb") as f:
             zf.writestr(info, f.read())
 PY
-fi
 
 WIN_STAGE="$TMP_DIR/windows_installer/Align42"
 mkdir -p "$WIN_STAGE"
@@ -128,27 +114,9 @@ WIN_INSTALL_ID="pkg_$(date +%Y%m%d%H%M%S)_$RANDOM"
 perl -0777 -pe "s/__ALIGN42_INSTALL_ID__/${WIN_INSTALL_ID}/g; s/__ALIGN42_INSTALL_COUNTRY__//g" "$WIN_STAGE/app.js" > "$WIN_STAGE/.app.js.tmp"
 mv "$WIN_STAGE/.app.js.tmp" "$WIN_STAGE/app.js"
 
-cat > "$WIN_STAGE/Launch Align42.cmd" <<'EOF'
-@echo off
-start "" "%~dp0Align42.html"
-EOF
-
-# Convenience launcher at extraction root (one click after unzip).
-cat > "$TMP_DIR/windows_installer/Open Align42 Home.cmd" <<'EOF'
-@echo off
-set "APP_HTML=%~dp0Align42\Align42.html"
-if not exist "%APP_HTML%" (
-  echo Align42.html was not found in "%~dp0Align42".
-  echo Ensure the zip was fully extracted before launching.
-  pause
-  exit /b 1
-)
-start "" "%APP_HTML%"
-EOF
-
 cat > "$TMP_DIR/windows_installer/README-Windows-Install.txt" <<'EOF'
 1) Extract this zip to your target directory.
-2) Open "Open Align42 Home.cmd" to launch the app home page.
+2) Open Align42/Align42.html in your browser.
 EOF
 
 rm -f "$WIN_ZIP_INSTALLER"
@@ -170,6 +138,8 @@ with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     for path in sorted(src.rglob("*")):
         if path.is_dir():
             continue
+        if path.name.startswith("._"):
+            continue
         arc = normalize_arcname(path)
         info = zipfile.ZipInfo(arc)
         info.compress_type = zipfile.ZIP_DEFLATED
@@ -184,6 +154,17 @@ PY
 
 # Build Windows SFX (.exe) installer only when explicitly requested.
 if [[ "$BUILD_WINDOWS_EXE" == "1" ]]; then
+  cat > "$TMP_DIR/windows_installer/Open Align42 Home.cmd" <<'EOF'
+@echo off
+set "APP_HTML=%~dp0Align42\Align42.html"
+if not exist "%APP_HTML%" (
+  echo Align42.html was not found in "%~dp0Align42".
+  echo Ensure the zip was fully extracted before launching.
+  pause
+  exit /b 1
+)
+start "" "%APP_HTML%"
+EOF
   ensure_7zip_tools
   WIN_PAYLOAD_7Z="$TMP_DIR/windows_payload.7z"
   WIN_SFX_CONFIG="$TMP_DIR/windows_sfx_config.txt"

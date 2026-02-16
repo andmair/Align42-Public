@@ -834,6 +834,7 @@ function ensureAssessmentData(assessment) {
   if (assessment.data.context) {
     const normalizedSize = normalizeOrgSizeBand(assessment.data.context.size);
     if (normalizedSize) assessment.data.context.size = normalizedSize;
+    ensureContextUploads(assessment.data.context);
   }
   if (!assessment.data.evidence) assessment.data.evidence = {};
   if (!assessment.data.visitedSections) assessment.data.visitedSections = {};
@@ -897,6 +898,107 @@ function ensureEvidence(assessment, controlId) {
 function ensureAiInsight(assessment, controlId) {
   if (!assessment.data.aiInsights[controlId]) assessment.data.aiInsights[controlId] = { interpret: "", interpretStructured: null, example: "", updatedAt: "" };
   return assessment.data.aiInsights[controlId];
+}
+
+function ensureContextUploads(context) {
+  if (!context.contextUploads || typeof context.contextUploads !== "object") {
+    context.contextUploads = {
+      platforms: { files: [], summary: "", updatedAt: "" },
+      roles: { files: [], summary: "", updatedAt: "" }
+    };
+  }
+  if (!context.contextUploads.platforms) context.contextUploads.platforms = { files: [], summary: "", updatedAt: "" };
+  if (!context.contextUploads.roles) context.contextUploads.roles = { files: [], summary: "", updatedAt: "" };
+  return context.contextUploads;
+}
+
+function parseListFromText(text) {
+  return `${text || ""}`
+    .split(/\r?\n|;|,/)
+    .map((x) => x.replace(/^[\-\*\d.)\s]+/, "").trim())
+    .filter(Boolean);
+}
+
+function compactUnique(values, limit = 16) {
+  return Array.from(new Set((values || []).map((x) => `${x}`.trim()).filter(Boolean))).slice(0, limit);
+}
+
+async function readTextLikeFile(file) {
+  const type = `${file?.type || ""}`.toLowerCase();
+  const name = `${file?.name || ""}`.toLowerCase();
+  const textLike = type.startsWith("text/")
+    || type.includes("json")
+    || type.includes("xml")
+    || type.includes("csv")
+    || type.includes("yaml")
+    || type.includes("javascript")
+    || type.includes("markdown")
+    || /\.(txt|md|csv|json|xml|yaml|yml|log|ini|conf|cfg|tsv|html?)$/.test(name);
+  if (!textLike) return "";
+  try {
+    const txt = await file.text();
+    return `${txt || ""}`.slice(0, 120000);
+  } catch {
+    return "";
+  }
+}
+
+function summarizePlatformsFromSources(textSources = [], files = []) {
+  const text = textSources.join("\n");
+  const known = [
+    "AWS", "Azure", "GCP", "Google Cloud", "Microsoft 365", "Office 365", "SAP", "Salesforce", "Oracle",
+    "ServiceNow", "Workday", "Jira", "Confluence", "GitHub", "GitLab", "Snowflake", "Databricks", "Power BI",
+    "Tableau", "Kubernetes", "Docker", "Okta", "CrowdStrike"
+  ];
+  const hits = [];
+  const lower = text.toLowerCase();
+  known.forEach((k) => { if (lower.includes(k.toLowerCase())) hits.push(k); });
+  const listed = parseListFromText(text).filter((x) => x.length <= 80);
+  const filenameHints = files.map((f) => `${f.name || ""}`.replace(/\.[A-Za-z0-9]+$/, "").trim());
+  const items = compactUnique(hits.concat(listed).concat(filenameHints), 14);
+  if (!items.length) {
+    return files.length
+      ? `Uploaded ${files.length} file(s). No text content could be parsed automatically; review filenames and add platform details manually.`
+      : "No platform content parsed.";
+  }
+  return `Parsed platform summary: ${items.join("; ")}.`;
+}
+
+function summarizeRolesFromSources(textSources = [], files = []) {
+  const text = textSources.join("\n");
+  const roleKeywords = /\b(CIO|CTO|CISO|CRO|CCO|DPO|Chief|Head|Director|Manager|Lead|Officer|Counsel|Compliance|Risk|Security|Engineering|Data|Technology)\b/i;
+  const lines = parseListFromText(text);
+  const roleLines = lines.filter((x) => roleKeywords.test(x)).slice(0, 20);
+  const orgChartHints = files
+    .map((f) => `${f.name || ""}`.replace(/\.[A-Za-z0-9]+$/, ""))
+    .filter((n) => /\b(org|organisation|organization|chart|role|raci|team)\b/i.test(n))
+    .slice(0, 6);
+  const roles = compactUnique(roleLines.concat(orgChartHints), 14);
+  if (!roles.length) {
+    return files.length
+      ? `Uploaded ${files.length} file(s). No role text could be parsed automatically; for org charts in image/PDF format, add role details manually or upload a text/CSV export.`
+      : "No role content parsed.";
+  }
+  return `Parsed role summary: ${roles.join("; ")}.`;
+}
+
+async function summarizeContextUploadWithAi(kind, textSources = [], files = [], context = {}) {
+  if (!aiFeaturesEnabled() || !aiProviderReady()) return "";
+  const joined = textSources.join("\n").slice(0, 16000);
+  const fileNames = files.map((f) => f.name || "").filter(Boolean).slice(0, 20).join("; ");
+  const label = kind === "roles" ? "Key Roles and Accountabilities" : "Primary IT Platforms";
+  const prompt = [
+    `Create a concise summary for: ${label}`,
+    "Return plain text only, max 120 words.",
+    "Focus on actionable, audit-relevant detail and avoid speculation.",
+    `Organisation: ${context.orgName || "Unknown"}`,
+    `Country: ${context.country || "Unknown"}`,
+    `Industry sector: ${context.industrySector || "Unknown"}`,
+    `Uploaded filenames: ${fileNames || "None"}`,
+    `Extracted text: ${joined || "No extracted text"}`
+  ].join("\n");
+  const raw = `${await aiComplete("You summarize uploaded business context evidence for ISO 42001 assessments. Keep output concise and factual.", prompt) || ""}`.trim();
+  return raw.slice(0, 1200);
 }
 
 function allControls() { return sections.filter((s) => s.type === "controls").flatMap((s) => s.controls); }
@@ -1159,7 +1261,30 @@ function inferSectorFromIndustryText(industryText) {
 }
 
 function inferSectorFromBusinessContext(context = {}) {
-  const combined = [context.orgName, context.businessOverview, context.industry].filter(Boolean).join(" ");
+  const combined = [context.orgName, context.businessOverview, context.industry].filter(Boolean).join(" ").toLowerCase();
+  if (!combined.trim()) return "";
+  const rules = [
+    { sector: "K: Financial and insurance activities", tokens: ["bank", "banking", "insurance", "insurer", "fintech", "lending", "wealth", "asset management", "superannuation", "broker"] },
+    { sector: "Q: Human health and social work activities", tokens: ["hospital", "health", "healthcare", "clinic", "medical", "pharma", "biotech", "aged care"] },
+    { sector: "O: Public administration and defence; compulsory social security", tokens: ["government", "public sector", "ministry", "department", "defence", "defense", "council", "authority"] },
+    { sector: "P: Education", tokens: ["education", "university", "school", "college", "training provider", "academy"] },
+    { sector: "C: Manufacturing", tokens: ["manufactur", "factory", "industrial", "production", "assembly", "plant", "hardware", "electronics manufacturing"] },
+    { sector: "J: Information and communication", tokens: ["software", "technology", "telecom", "saas", "data platform", "digital platform", "cloud", "it services"] },
+    { sector: "G: Wholesale and retail trade; repair of motor vehicles and motorcycles", tokens: ["retail", "ecommerce", "e-commerce", "wholesale", "consumer goods", "merchant"] },
+    { sector: "H: Transportation and storage", tokens: ["transport", "logistics", "freight", "shipping", "warehouse", "courier", "supply chain"] },
+    { sector: "D: Electricity, gas, steam and air conditioning supply", tokens: ["energy", "utility", "power", "electricity", "grid", "renewable"] }
+  ];
+  let best = { sector: "", score: 0 };
+  rules.forEach((r) => {
+    let score = 0;
+    r.tokens.forEach((t) => {
+      if (combined.includes(t)) score += 1;
+    });
+    if (r.sector.startsWith("C:") && /manufactur|factory|industrial/.test(combined)) score += 1;
+    if (r.sector.startsWith("J:") && /software|saas|telecom|digital/.test(combined)) score += 1;
+    if (score > best.score) best = { sector: r.sector, score };
+  });
+  if (best.score > 0) return best.sector;
   return inferSectorFromIndustryText(combined);
 }
 
@@ -2667,13 +2792,30 @@ function renderAssessment(assessment) {
 function renderContext(assessment, section) {
   const root = document.getElementById("wizardSection");
   const ctx = assessment.data.context || {};
-  const selectedCountry = ctx.country || "";
+  const contextUploads = ensureContextUploads(ctx);
+  let initializedDefaultCountry = false;
+  if (!`${ctx.country || ""}`.trim()) {
+    ctx.country = "Australia";
+    if (!ctx.localisationSource) ctx.localisationSource = "default";
+    const seed = baseFrameworksForContext(ctx);
+    if (!Array.isArray(ctx.frameworkSuggestions) || !ctx.frameworkSuggestions.length) ctx.frameworkSuggestions = seed.slice();
+    if (!Array.isArray(ctx.applicableFrameworks) || !ctx.applicableFrameworks.length) ctx.applicableFrameworks = seed.slice();
+    initializedDefaultCountry = true;
+  }
+  if (initializedDefaultCountry) {
+    assessment.updatedAt = nowIso();
+    saveAssessments();
+  }
+  const selectedCountry = ctx.country || "Australia";
   const stateOptions = STATE_OPTIONS[selectedCountry] || [];
   const inferredSector = inferSectorFromBusinessContext(ctx);
   const chosenSector = ctx.industrySector || inferredSector || "";
   const secondaryOptions = ISIC_SECONDARY_BY_BROAD[chosenSector] || [];
   const chosenSecondary = ctx.industrySubSector || "";
-  if (inferredSector && !ctx.industrySector) ctx.industrySector = inferredSector;
+  if (inferredSector && (!ctx.industrySector || ctx.industrySectorAuto)) {
+    ctx.industrySector = inferredSector;
+    ctx.industrySectorAuto = true;
+  }
   if (!Array.isArray(ctx.applicableFrameworks)) ctx.applicableFrameworks = [];
   const frameworks = getApplicableFrameworks(ctx);
   const aiEnabled = aiFeaturesEnabled();
@@ -2764,7 +2906,21 @@ function renderContext(assessment, section) {
           </div>
         `;
       }
-      if (f.type === "textarea") return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><textarea data-field="${f.key}" placeholder="${escapeHtml(f.starter || "Provide response")}">${escapeHtml(val)}</textarea></div>`;
+      if (f.type === "textarea") {
+        const uploadBlock = (f.key === "platforms" || f.key === "roles")
+          ? `<div class="evidence">
+              <strong>Upload Supporting Files</strong>
+              <p class="hint">${f.key === "roles" ? "Upload org charts or role matrices (text/CSV preferred for parsing)." : "Upload platform inventories or architecture exports (text/CSV preferred for parsing)."}</p>
+              <input type="file" data-context-upload="${f.key}" multiple />
+              <div class="actions" style="margin-top:0.45rem;">
+                <button class="btn secondary small" type="button" data-context-parse="${f.key}">${assessmentMode() === "advanced" ? "Parse Uploaded Files (AI if available)" : "Parse Uploaded Files"}</button>
+              </div>
+              ${(contextUploads[f.key]?.summary || "") ? `<p class="hint"><strong>Parsed summary:</strong> ${escapeHtml(contextUploads[f.key].summary)}</p>` : ""}
+              ${(contextUploads[f.key]?.files || []).length ? `<ul class="evidence-list">${(contextUploads[f.key].files || []).map((x) => `<li>${escapeHtml(x.name)} (${Math.max(1, Math.round((x.size || 0) / 1024))} KB)</li>`).join("")}</ul>` : ""}
+            </div>`
+          : "";
+        return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><textarea data-field="${f.key}" placeholder="${escapeHtml(f.starter || "Provide response")}">${escapeHtml(val)}</textarea>${uploadBlock}</div>`;
+      }
       if (f.type === "select") return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><select data-field="${f.key}">${f.options.map((o) => `<option value="${escapeHtml(o)}" ${val === o ? "selected" : ""}>${escapeHtml(o)}</option>`).join("")}</select></div>`;
       return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><input type="${f.type}" data-field="${f.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(f.starter || "Provide response")}" /></div>`;
     }).join("")}
@@ -2786,6 +2942,16 @@ function renderContext(assessment, section) {
   `;
 
   root.querySelectorAll("[data-field]").forEach((el) => {
+    const syncIndustryClassificationUi = () => {
+      const broadSelect = root.querySelector("select[data-field='industrySector']");
+      const secondarySelect = root.querySelector("select[data-field='industrySubSector']");
+      if (!broadSelect || !secondarySelect) return;
+      const broad = assessment.data.context.industrySector || "";
+      if (broad && broadSelect.value !== broad) broadSelect.value = broad;
+      const secondaryOptions = ISIC_SECONDARY_BY_BROAD[broad] || [];
+      if (!secondaryOptions.includes(assessment.data.context.industrySubSector || "")) assessment.data.context.industrySubSector = "";
+      secondarySelect.innerHTML = `<option value="">Select secondary classification</option>${secondaryOptions.map((s) => `<option value="${escapeHtml(s)}" ${(assessment.data.context.industrySubSector || "") === s ? "selected" : ""}>${escapeHtml(s)}</option>`).join("")}`;
+    };
     const eventName = el.tagName === "SELECT" ? "change" : "input";
     el.addEventListener(eventName, (e) => {
       const field = e.target.dataset.field;
@@ -2799,9 +2965,21 @@ function renderContext(assessment, section) {
       }
       if (["orgName", "businessOverview"].includes(field) && !assessment.data.context.industrySector) {
         const inferred = inferSectorFromBusinessContext(assessment.data.context);
-        if (inferred) assessment.data.context.industrySector = inferred;
+        if (inferred) {
+          assessment.data.context.industrySector = inferred;
+          assessment.data.context.industrySectorAuto = true;
+          syncIndustryClassificationUi();
+        }
+      }
+      if (["orgName", "businessOverview"].includes(field) && assessment.data.context.industrySectorAuto) {
+        const inferred = inferSectorFromBusinessContext(assessment.data.context);
+        if (inferred && inferred !== assessment.data.context.industrySector) {
+          assessment.data.context.industrySector = inferred;
+          syncIndustryClassificationUi();
+        }
       }
       if (field === "industrySector") {
+        assessment.data.context.industrySectorAuto = false;
         const options = ISIC_SECONDARY_BY_BROAD[assessment.data.context.industrySector || ""] || [];
         if (!options.includes(assessment.data.context.industrySubSector || "")) assessment.data.context.industrySubSector = "";
       }
@@ -2872,6 +3050,72 @@ function renderContext(assessment, section) {
     saveAssessments();
     renderContext(assessment, section);
     toast(`Section insights generated (${insights.source}).`);
+  });
+
+  root.querySelectorAll("[data-context-upload]").forEach((el) => {
+    el.addEventListener("change", (e) => {
+      const key = e.target.dataset.contextUpload;
+      if (!["platforms", "roles"].includes(key)) return;
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      ensureContextUploads(assessment.data.context);
+      assessment.data.context.contextUploads[key].files = files.map((f) => ({
+        id: uid("ctx_file"),
+        name: f.name,
+        size: f.size,
+        type: f.type || "file",
+        addedAt: nowIso()
+      }));
+      assessment.updatedAt = nowIso();
+      saveAssessments();
+      toast(`${files.length} file(s) attached for ${key}.`);
+      renderContext(assessment, section);
+    });
+  });
+
+  root.querySelectorAll("[data-context-parse]").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      const key = e.currentTarget.dataset.contextParse;
+      if (!["platforms", "roles"].includes(key)) return;
+      const fileInput = root.querySelector(`[data-context-upload='${key}']`);
+      const files = Array.from(fileInput?.files || []);
+      if (!files.length) return toast("Upload file(s) first.");
+      e.currentTarget.disabled = true;
+      const original = e.currentTarget.textContent;
+      e.currentTarget.textContent = "Parsing...";
+      try {
+        const texts = [];
+        for (const f of files) {
+          const txt = await readTextLikeFile(f);
+          if (txt) texts.push(txt);
+        }
+        let summary = "";
+        if (assessmentMode() === "advanced" && aiFeaturesEnabled() && aiProviderReady()) {
+          try {
+            summary = await summarizeContextUploadWithAi(key, texts, files, assessment.data.context || {});
+          } catch {}
+        }
+        if (!summary) {
+          summary = key === "platforms"
+            ? summarizePlatformsFromSources(texts, files)
+            : summarizeRolesFromSources(texts, files);
+        }
+        ensureContextUploads(assessment.data.context);
+        assessment.data.context.contextUploads[key].summary = summary;
+        assessment.data.context.contextUploads[key].updatedAt = nowIso();
+        const current = `${assessment.data.context[key] || ""}`.trim();
+        assessment.data.context[key] = current
+          ? `${current}\n\n${summary}`
+          : summary;
+        assessment.updatedAt = nowIso();
+        saveAssessments();
+        toast(`Parsed ${files.length} file(s) for ${key}.`);
+        renderContext(assessment, section);
+      } finally {
+        e.currentTarget.disabled = false;
+        e.currentTarget.textContent = original;
+      }
+    });
   });
   bindNav(assessment);
 }

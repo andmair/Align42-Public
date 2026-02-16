@@ -88,6 +88,8 @@ Build current supported installers (macOS zip and Windows zip):
 ./scripts/build_single_file_installers.sh
 ```
 
+The ZIP installers are intentionally packaged as static, non-executable web assets to reduce OS security/quarantine prompts when downloaded from GitHub.
+
 Windows `.exe` installer is deprecated for now and is not rebuilt by default.
 To build it explicitly in future:
 
