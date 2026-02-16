@@ -5,6 +5,32 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist/installers"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
+SEVENZIP_DIR="$ROOT_DIR/tools/7zip"
+SEVENZIP_BIN="$SEVENZIP_DIR/mac/7zz"
+SEVENZIP_WIN_PACKAGE="$SEVENZIP_DIR/7zip-win-x64.exe"
+SEVENZIP_WIN_SFX="$SEVENZIP_DIR/win/7z.sfx"
+
+ensure_7zip_tools() {
+  if [[ ! -x "$SEVENZIP_BIN" ]]; then
+    mkdir -p "$SEVENZIP_DIR/mac"
+    local mac_pkg="$SEVENZIP_DIR/7zip-mac.tar.xz"
+    if [[ ! -f "$mac_pkg" ]]; then
+      command -v curl >/dev/null 2>&1 || { echo "curl is required to download 7-Zip tools." >&2; exit 1; }
+      curl -fL -o "$mac_pkg" "https://www.7-zip.org/a/7z2409-mac.tar.xz"
+    fi
+    bsdtar -xf "$mac_pkg" -C "$SEVENZIP_DIR/mac"
+    chmod +x "$SEVENZIP_BIN"
+  fi
+
+  if [[ ! -f "$SEVENZIP_WIN_SFX" ]]; then
+    mkdir -p "$SEVENZIP_DIR/win"
+    if [[ ! -f "$SEVENZIP_WIN_PACKAGE" ]]; then
+      command -v curl >/dev/null 2>&1 || { echo "curl is required to download 7-Zip tools." >&2; exit 1; }
+      curl -fL -o "$SEVENZIP_WIN_PACKAGE" "https://www.7-zip.org/a/7z2409-x64.exe"
+    fi
+    "$SEVENZIP_BIN" x -y "$SEVENZIP_WIN_PACKAGE" "7z.sfx" -o"$SEVENZIP_DIR/win" >/dev/null
+  fi
+}
 
 mkdir -p "$DIST_DIR" "$TMP_DIR/payload"
 # Package full app content while excluding tests/dev/build artifacts.
@@ -13,6 +39,7 @@ rsync -a \
   --exclude ".DS_Store" \
   --exclude "dist" \
   --exclude "scripts" \
+  --exclude "tools" \
   --exclude "tests" \
   --exclude "__pycache__" \
   --exclude "*.pyc" \
@@ -31,7 +58,8 @@ fi
 PAYLOAD_B64="$(base64 < "$TMP_DIR/align42_payload.zip")"
 
 MAC_INSTALLER="$DIST_DIR/Align42-Installer-macOS.command"
-WIN_INSTALLER="$DIST_DIR/Align42-Installer-Windows.bat"
+WIN_ZIP_INSTALLER="$DIST_DIR/Align42-Installer-Windows.zip"
+WIN_EXE_INSTALLER="$DIST_DIR/Align42-Installer-Windows.exe"
 
 cat > "$MAC_INSTALLER" <<EOF
 #!/usr/bin/env bash
@@ -154,93 +182,64 @@ open "\$TARGET_DIR/Align42.html" >/dev/null 2>&1 || true
 EOF
 chmod +x "$MAC_INSTALLER"
 
-cat > "$WIN_INSTALLER" <<'EOF'
+WIN_STAGE="$TMP_DIR/windows_installer/Align42"
+mkdir -p "$WIN_STAGE"
+rsync -a "$TMP_DIR/payload/" "$WIN_STAGE/"
+
+# Stamp with package-level installation scope for clean local storage isolation.
+WIN_INSTALL_ID="pkg_$(date +%Y%m%d%H%M%S)_$RANDOM"
+perl -0777 -pe "s/__ALIGN42_INSTALL_ID__/${WIN_INSTALL_ID}/g; s/__ALIGN42_INSTALL_COUNTRY__//g" "$WIN_STAGE/app.js" > "$WIN_STAGE/.app.js.tmp"
+mv "$WIN_STAGE/.app.js.tmp" "$WIN_STAGE/app.js"
+
+cat > "$WIN_STAGE/Launch Align42.cmd" <<'EOF'
 @echo off
-setlocal
-
-set "APP_NAME=Align42"
-set "WORK_DIR=%TEMP%\\align42_install_%RANDOM%%RANDOM%"
-set "ZIP_FILE=%WORK_DIR%\\payload.zip"
-set "SELF_FILE=%~f0"
-set "BASE_DIR="
-set "TARGET_DIR="
-
-if not exist "%WORK_DIR%" mkdir "%WORK_DIR%"
-
-for /f "usebackq delims=" %%I in (`powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference = 'Stop';" ^
-  "Add-Type -AssemblyName System.Windows.Forms;" ^
-  "$dialog = New-Object System.Windows.Forms.FolderBrowserDialog;" ^
-  "$dialog.Description = 'Choose install location for Align42 (an Align42 folder will be created there):';" ^
-  "$dialog.ShowNewFolderButton = $true;" ^
-  "if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Write($dialog.SelectedPath) }"`) do set "BASE_DIR=%%I"
-
-if "%BASE_DIR%"=="" (
-  set /p BASE_DIR=Enter install location path (Align42 folder will be created there): 
-)
-if "%BASE_DIR%"=="" set "BASE_DIR=%LOCALAPPDATA%"
-
-set "TARGET_DIR=%BASE_DIR%\\%APP_NAME%"
-if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference = 'Stop';" ^
-  "$raw = Get-Content -LiteralPath '%SELF_FILE%' -Raw;" ^
-  "$start = '__PAYLOAD_B64_BEGIN__';" ^
-  "$end = '__PAYLOAD_B64_END__';" ^
-  "$s = $raw.IndexOf($start);" ^
-  "$e = $raw.IndexOf($end);" ^
-  "if ($s -lt 0 -or $e -lt 0) { throw 'Installer payload markers not found.' };" ^
-  "$b64 = $raw.Substring($s + $start.Length, $e - ($s + $start.Length)).Trim();" ^
-  "[IO.File]::WriteAllBytes('%ZIP_FILE%', [Convert]::FromBase64String($b64));" ^
-  "Expand-Archive -LiteralPath '%ZIP_FILE%' -DestinationPath '%TARGET_DIR%' -Force;"
-if errorlevel 1 (
-  echo Installation failed while extracting payload.
-  exit /b 1
-)
-
-powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ErrorActionPreference = 'Stop';" ^
-  "$region = '';" ^
-  "try { $region = [System.Globalization.RegionInfo]::CurrentRegion.TwoLetterISORegionName } catch {};" ^
-  "if (-not $region) { try { $region = (Get-Culture).Name.Split('-')[-1] } catch {} };" ^
-  "$installCountry = switch ($region.ToUpper()) { 'AU' { 'Australia' } 'CA' { 'Canada' } 'FR' { 'France' } 'DE' { 'Germany' } 'IN' { 'India' } 'IE' { 'Ireland' } 'JP' { 'Japan' } 'NL' { 'Netherlands' } 'NZ' { 'New Zealand' } 'SG' { 'Singapore' } 'ZA' { 'South Africa' } 'ES' { 'Spain' } 'SE' { 'Sweden' } 'CH' { 'Switzerland' } 'AE' { 'United Arab Emirates' } 'GB' { 'United Kingdom' } 'UK' { 'United Kingdom' } 'US' { 'United States' } default { '' } };" ^
-  "$installId = 'inst_' + [Guid]::NewGuid().ToString('N');" ^
-  "$appJs = Join-Path '%TARGET_DIR%' 'app.js';" ^
-  "$content = Get-Content -LiteralPath $appJs -Raw;" ^
-  "$content = $content.Replace('__ALIGN42_INSTALL_ID__', $installId);" ^
-  "$content = $content.Replace('__ALIGN42_INSTALL_COUNTRY__', $installCountry);" ^
-  "Set-Content -LiteralPath $appJs -Value $content -NoNewline;"
-if errorlevel 1 (
-  echo Installation failed while stamping installation ID.
-  exit /b 1
-)
-
-for %%F in ("Align42.html" "app.js" "styles.css" "logo-align42.svg" "standards.html") do (
-  if not exist "%TARGET_DIR%\\%%~F" (
-    echo Installation verification failed: missing %%~F
-    exit /b 1
-  )
-)
-
-> "%TARGET_DIR%\\Launch Align42.cmd" (
-  echo @echo off
-  echo start "" "%%~dp0Align42.html"
-)
-
-echo Align42 installed to: %TARGET_DIR%
-echo Use: %TARGET_DIR%\\Launch Align42.cmd
-start "" "%TARGET_DIR%\\Align42.html"
-
-rmdir /s /q "%WORK_DIR%" >nul 2>nul
-goto :eof
-
-__PAYLOAD_B64_BEGIN__
+start "" "%~dp0Align42.html"
 EOF
 
-printf '%s\n' "$PAYLOAD_B64" >> "$WIN_INSTALLER"
-printf '%s\n' "__PAYLOAD_B64_END__" >> "$WIN_INSTALLER"
+# Convenience launcher at extraction root (one click after unzip).
+cat > "$TMP_DIR/windows_installer/Open Align42 Home.cmd" <<'EOF'
+@echo off
+set "APP_HTML=%~dp0Align42\Align42.html"
+if not exist "%APP_HTML%" (
+  echo Align42.html was not found in "%~dp0Align42".
+  echo Ensure the zip was fully extracted before launching.
+  pause
+  exit /b 1
+)
+start "" "%APP_HTML%"
+EOF
+
+cat > "$TMP_DIR/windows_installer/README-Windows-Install.txt" <<'EOF'
+1) Extract this zip to your target directory.
+2) Open "Open Align42 Home.cmd" to launch the app home page.
+EOF
+
+rm -f "$WIN_ZIP_INSTALLER"
+(cd "$TMP_DIR/windows_installer" && zip -qr "$WIN_ZIP_INSTALLER" "Align42" "Open Align42 Home.cmd" "README-Windows-Install.txt")
+
+# Build Windows SFX (.exe) installer as a second distribution option.
+ensure_7zip_tools
+WIN_PAYLOAD_7Z="$TMP_DIR/windows_payload.7z"
+WIN_SFX_CONFIG="$TMP_DIR/windows_sfx_config.txt"
+
+(cd "$TMP_DIR/windows_installer" && "$SEVENZIP_BIN" a -t7z -mx=9 "$WIN_PAYLOAD_7Z" "Align42" "Open Align42 Home.cmd" "README-Windows-Install.txt" >/dev/null)
+
+cat > "$WIN_SFX_CONFIG" <<'EOF'
+;!@Install@!UTF-8!
+Title="Align42 Installer"
+BeginPrompt="Align42 will be extracted into this folder and the home page will open."
+ExtractDialogText="Extracting Align42..."
+InstallPath="%S\\"
+RunProgram="Open Align42 Home.cmd"
+;!@InstallEnd@!
+EOF
+
+cat "$SEVENZIP_WIN_SFX" "$WIN_SFX_CONFIG" "$WIN_PAYLOAD_7Z" > "$WIN_EXE_INSTALLER"
+
+# Remove legacy Windows bat installer artifact if present.
+rm -f "$DIST_DIR/Align42-Installer-Windows.bat"
 
 echo "Created installers:"
 echo "  $MAC_INSTALLER"
-echo "  $WIN_INSTALLER"
+echo "  $WIN_ZIP_INSTALLER"
+echo "  $WIN_EXE_INSTALLER"

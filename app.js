@@ -701,7 +701,8 @@ function defaultAssessmentData() {
     aiInsights: {},
     sectionInsights: {},
     preferredApproach: "fastest",
-    roadmapScenario: "standard"
+    roadmapScenario: "standard",
+    reportAudience: "board"
   };
 }
 
@@ -791,6 +792,7 @@ function ensureAssessmentData(assessment) {
   if (!assessment.data.sectionInsights) assessment.data.sectionInsights = {};
   if (!assessment.data.preferredApproach) assessment.data.preferredApproach = "fastest";
   if (!assessment.data.roadmapScenario) assessment.data.roadmapScenario = "standard";
+  if (!assessment.data.reportAudience) assessment.data.reportAudience = "board";
   if (typeof assessment.data.currentSection !== "number") assessment.data.currentSection = 0;
   if (!assessment.demoMode && assessment.data.demoMode) assessment.demoMode = true;
   if (!assessment.isDemo && (assessment.demoMode || assessment.data.demoMode)) assessment.isDemo = true;
@@ -3535,6 +3537,213 @@ function buildMaturityRadarCanvas(assessment, size = 920) {
   return canvas;
 }
 
+function readinessBandFromScore(score) {
+  if (score >= 80) return "High readiness";
+  if (score >= 60) return "Moderate readiness";
+  return "Foundational uplift required";
+}
+
+function readinessNarrative(score) {
+  if (score >= 80) {
+    return "Your organisation has a strong baseline. Focus on targeted remediation, evidence quality, and closure of remaining high-priority gaps.";
+  }
+  if (score >= 60) {
+    return "Your organisation has meaningful controls in place, but readiness will depend on consistent execution, clearer ownership, and stronger evidence.";
+  }
+  return "Your organisation is in an early stage of ISO 42001 readiness and should prioritize foundational governance, risk, and operational controls.";
+}
+
+function sectionPerformanceRows(assessment) {
+  const rows = sections
+    .filter((s) => s.type === "controls")
+    .map((s) => {
+      const controls = s.controls || [];
+      const values = controls.map((c) => Number(assessment.data.ratings[c.id] || 0));
+      const average = values.length ? Number((values.reduce((sum, x) => sum + x, 0) / values.length).toFixed(1)) : 0;
+      const compliantCount = values.filter((x) => x >= 4).length;
+      return {
+        id: s.id,
+        section: s.title,
+        average,
+        compliantCount,
+        totalControls: controls.length
+      };
+    });
+  return rows;
+}
+
+function actionWindowLabel(endWeekScaled) {
+  if (endWeekScaled <= 4) return "0-30 days";
+  if (endWeekScaled <= 9) return "31-60 days";
+  if (endWeekScaled <= 13) return "61-90 days";
+  return "Beyond 90 days";
+}
+
+function businessImpactFromPriority(priority) {
+  if (priority === "High") return "High likelihood of audit nonconformity and elevated AI risk if delayed.";
+  if (priority === "Medium") return "Moderate operational and compliance risk if not addressed on time.";
+  return "Lower immediate risk, but prolonged delay will slow maturity and assurance confidence.";
+}
+
+function conciseActionText(text) {
+  const raw = `${text || ""}`.trim();
+  if (!raw) return "Implement control improvements with clear owner, evidence, and review cadence.";
+  const sentence = raw.split(".").map((s) => s.trim()).filter(Boolean)[0] || raw;
+  return sentence.endsWith(".") ? sentence : `${sentence}.`;
+}
+
+function buildExecutiveActionPlan(assessment, timeline, findings, maxItems = 8) {
+  const findingsByControl = {};
+  findings.forEach((f) => {
+    if (!f.controlId) return;
+    if (!findingsByControl[f.controlId]) findingsByControl[f.controlId] = [];
+    findingsByControl[f.controlId].push(f);
+  });
+  return timeline.items.slice(0, maxItems).map((item, idx) => {
+    const related = findingsByControl[item.id] || [];
+    const findingText = related.length
+      ? `${related[0].type}: ${related[0].message}`
+      : "No explicit contradiction detected, but current maturity indicates uplift is still required.";
+    return {
+      number: idx + 1,
+      control: item.control,
+      clause: item.clause,
+      owner: item.owner,
+      priority: item.priority,
+      window: actionWindowLabel(item.endWeekScaled || 0),
+      due: item.endLabel,
+      businessImpact: businessImpactFromPriority(item.priority),
+      recommendedAction: conciseActionText(item.method),
+      evidenceExpected: conciseActionText((getControl(item.id)?.bestPractice || "").replace(/^([a-z])/i, (m) => m.toUpperCase())),
+      findingText
+    };
+  });
+}
+
+function buildComplianceDonutCanvas(compliant, total, size = 480) {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  const center = size / 2;
+  const radius = size * 0.34;
+  const ring = size * 0.12;
+  const nonCompliant = Math.max(0, total - compliant);
+  const ratio = total ? compliant / total : 0;
+
+  ctx.fillStyle = "#f8fcfa";
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.beginPath();
+  ctx.arc(center, center, radius, 0, Math.PI * 2);
+  ctx.lineWidth = ring;
+  ctx.strokeStyle = "#e2ece7";
+  ctx.stroke();
+
+  const start = -Math.PI / 2;
+  const end = start + (Math.PI * 2 * ratio);
+  ctx.beginPath();
+  ctx.arc(center, center, radius, start, end);
+  ctx.lineWidth = ring;
+  ctx.strokeStyle = "#1e8a63";
+  ctx.stroke();
+
+  ctx.fillStyle = "#17352f";
+  ctx.textAlign = "center";
+  ctx.font = "700 56px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText(`${Math.round(ratio * 100)}%`, center, center + 14);
+  ctx.font = "500 18px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillStyle = "#55736a";
+  ctx.fillText("Control coverage", center, center + 44);
+
+  const legendY = size - 68;
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#1e8a63";
+  ctx.fillRect(36, legendY - 10, 18, 10);
+  ctx.fillStyle = "#304b45";
+  ctx.font = "600 15px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText(`Compliant: ${compliant}`, 62, legendY);
+  ctx.fillStyle = "#c44d4d";
+  ctx.fillRect(240, legendY - 10, 18, 10);
+  ctx.fillStyle = "#304b45";
+  ctx.fillText(`Non-compliant: ${nonCompliant}`, 266, legendY);
+
+  return canvas;
+}
+
+function buildSectionMaturityBarsCanvas(assessment, width = 980, height = 430) {
+  const data = sectionPerformanceRows(assessment);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#f7fbf9";
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = "#20453d";
+  ctx.font = "700 24px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText("ISO 42001 Dimension Maturity", 34, 42);
+  ctx.fillStyle = "#58766d";
+  ctx.font = "500 14px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText("Target threshold for readiness is approximately 4.0/5 across dimensions.", 34, 66);
+
+  const left = 270;
+  const right = width - 34;
+  const top = 92;
+  const rowH = Math.max(44, Math.floor((height - top - 26) / Math.max(1, data.length)));
+  const plotW = right - left;
+  const toX = (score) => left + Math.round((Math.max(0, Math.min(5, score)) / 5) * plotW);
+
+  ctx.strokeStyle = "#d6e5de";
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= 5; t++) {
+    const x = toX(t);
+    ctx.beginPath();
+    ctx.moveTo(x, top - 8);
+    ctx.lineTo(x, height - 22);
+    ctx.stroke();
+    ctx.fillStyle = "#6b8a81";
+    ctx.font = "500 12px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(`${t}`, x - 3, top - 12);
+  }
+
+  const targetX = toX(4);
+  ctx.strokeStyle = "#1f8d56";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 5]);
+  ctx.beginPath();
+  ctx.moveTo(targetX, top - 8);
+  ctx.lineTo(targetX, height - 22);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  data.forEach((row, i) => {
+    const y = top + (i * rowH);
+    const barY = y + 8;
+    const barH = Math.max(20, rowH - 18);
+    const tone = row.average >= 4 ? "#2d9963" : row.average >= 3 ? "#c5892e" : "#c64c4c";
+    const endX = toX(row.average);
+
+    ctx.fillStyle = "#2a4a42";
+    ctx.font = "600 14px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(row.section.replace(/^Clause\s+\d+(?:-\d+)?:\s*/i, ""), 34, barY + 15);
+    ctx.fillStyle = "#6b8880";
+    ctx.font = "500 12px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(`${row.compliantCount}/${row.totalControls} controls compliant`, 34, barY + 32);
+
+    ctx.fillStyle = "#e6f0eb";
+    ctx.fillRect(left, barY, plotW, barH);
+    ctx.fillStyle = tone;
+    ctx.fillRect(left, barY, Math.max(3, endX - left), barH);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 12px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(`${row.average.toFixed(1)}/5`, Math.max(left + 6, endX - 48), barY + 16);
+  });
+
+  return canvas;
+}
+
 function renderFinal(assessment) {
   const root = document.getElementById("wizardSection");
   const rows = controlRows(assessment);
@@ -3556,14 +3765,23 @@ function renderFinal(assessment) {
   const timelineRows = timeline.items.slice(0, 16);
   const coveragePercent = total ? Math.round((compliant / total) * 100) : 0;
   const averageRating = total ? (rows.reduce((sum, r) => sum + Number(r.score || 0), 0) / total).toFixed(1) : "0.0";
-  const readinessBand = score >= 80
-    ? "High readiness"
-    : score >= 60
-      ? "Moderate readiness"
-      : "Foundational uplift required";
+  const readinessBand = readinessBandFromScore(score);
+  const readinessText = readinessNarrative(score);
+  const audienceLabel = "Compliance-focused";
+  const executiveLead = "This report uses a compliance-focused tone aligned to ISO 42001 readiness, emphasizing control effectiveness, evidence sufficiency, and accountable remediation.";
+  const interpretationGuide = "Use this report to verify control maturity, identify likely nonconformity risk, and track corrective actions to closure with objective evidence.";
   const constraintNarrative = `${timeline.constraintNotes}${timeline.compressed ? " Timeline has been compressed to fit the selected horizon." : ""}`;
   const isDemoMode = isDemoAssessment(assessment);
   const isAdvancedMode = assessmentMode() === "advanced";
+  const sectionRows = sectionPerformanceRows(assessment);
+  const actionPlan = buildExecutiveActionPlan(assessment, timeline, findings, 9);
+  const actionRowsForAudience = actionPlan;
+  const timelineById = Object.fromEntries(timeline.items.map((x) => [x.id, x]));
+  const generatedAt = new Date().toLocaleString();
+  const complianceChartDataUrl = buildComplianceDonutCanvas(compliant, total, 420).toDataURL("image/png");
+  const sectionBarsDataUrl = buildSectionMaturityBarsCanvas(assessment, 980, 430).toDataURL("image/png");
+  const roadmapCanvasForExport = buildRoadmapCanvas(assessment);
+  const roadmapDataUrl = roadmapCanvasForExport.toDataURL("image/png");
   const radarForExport = isAdvancedMode ? buildMaturityRadarCanvas(assessment, 920) : null;
   const radarDataUrl = radarForExport ? radarForExport.toDataURL("image/png") : "";
 
@@ -3571,73 +3789,173 @@ function renderFinal(assessment) {
     <html>
       <head>
         <style>
-          body { font-family: "Segoe UI", Arial, sans-serif; color: #1b2f2c; margin: 0; background: #eef4f1; }
-          .page { max-width: 1120px; margin: 0 auto; background: #ffffff; min-height: 100vh; }
-          .hero { background: linear-gradient(90deg, #0d7f60, #22ac7d); color: #fff; padding: 28px 32px; }
-          .hero h1 { margin: 0 0 10px; font-size: 30px; }
-          .hero p { margin: 4px 0; font-size: 15px; }
-          .body { padding: 24px 32px 34px; }
-          h2 { margin: 24px 0 10px; font-size: 20px; color: #0d3a31; }
-          p { line-height: 1.45; }
-          ul { margin-top: 8px; }
+          body { font-family: "Segoe UI", Arial, sans-serif; color: #1b2f2c; margin: 0; background: #edf4f1; }
+          .page { max-width: 1180px; margin: 0 auto; background: #ffffff; min-height: 100vh; }
+          .cover { background: linear-gradient(96deg, #0d7f60, #1a9b73 56%, #2bb58a); color: #fff; padding: 52px 44px; min-height: 360px; }
+          .cover h1 { margin: 0 0 10px; font-size: 38px; letter-spacing: 0.01em; }
+          .cover h2 { margin: 0 0 18px; font-size: 20px; border: 0; color: #e7fff4; padding: 0; }
+          .cover p { margin: 6px 0; font-size: 15px; line-height: 1.45; }
+          .cover .meta { margin-top: 26px; font-size: 13px; opacity: 0.98; }
+          .body { padding: 24px 36px 40px; }
+          h2 { margin: 26px 0 12px; font-size: 21px; color: #0d3a31; border-bottom: 1px solid #d5e4dc; padding-bottom: 6px; }
+          h3 { margin: 14px 0 8px; font-size: 16px; color: #17493f; }
+          p { line-height: 1.5; margin: 6px 0; }
+          ul { margin-top: 8px; margin-bottom: 8px; }
+          .toc { border: 1px solid #d5e4dc; border-radius: 12px; background: #f8fcfa; padding: 14px; }
+          .toc ol { margin: 8px 0 4px 18px; }
+          .toc li { margin-bottom: 6px; }
+          .note { border: 1px solid #cde0d6; background: #f5fbf8; border-radius: 12px; padding: 12px 14px; }
           .kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
           .card { border: 1px solid #d8e7df; border-radius: 12px; padding: 12px; background: #f8fcfa; }
-          .card .label { font-size: 12px; color: #537168; text-transform: uppercase; letter-spacing: 0.03em; }
+          .card .label { font-size: 11px; color: #537168; text-transform: uppercase; letter-spacing: 0.05em; }
           .card .value { font-size: 24px; margin-top: 4px; color: #12332d; font-weight: 700; }
-          .timeline-meta { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 10px; }
-          .timeline-axis { display: flex; justify-content: space-between; border-top: 2px solid #b7cec3; margin-top: 12px; padding-top: 8px; color: #48665d; font-size: 12px; }
+          .viz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+          .viz-grid img { width: 100%; border: 1px solid #d5e4dc; border-radius: 10px; background: #f8fcfa; }
+          .pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 8px; margin-right: 6px; }
+          .pill-high { background: #ffe5e5; color: #8e2f2f; }
           table { width: 100%; border-collapse: collapse; margin-top: 10px; }
           th, td { border: 1px solid #d7e5de; padding: 8px; font-size: 12px; vertical-align: top; }
           th { background: #eef6f2; text-align: left; }
+          .small { font-size: 11px; color: #607d73; }
+          .timeline-img { width: 100%; border: 1px solid #d5e4dc; border-radius: 12px; margin-top: 8px; }
+          .break-after { page-break-after: always; }
+          @media (max-width: 1000px) { .kpi { grid-template-columns: 1fr 1fr; } .viz-grid { grid-template-columns: 1fr; } }
         </style>
       </head>
       <body>
         <div class="page">
-          <div class="hero">
-            <h1>Align42 ISO 42001 Readiness Report</h1>
+          <div class="cover break-after">
+            <h1>Align42</h1>
+            <h2>ISO 42001 Readiness Assessment Report</h2>
             <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
-            <p><strong>Generated:</strong> ${escapeHtml(new Date().toLocaleString())}</p>
+            <p><strong>Audience Mode:</strong> ${escapeHtml(audienceLabel)}</p>
+            <p><strong>Report Purpose:</strong> Provide a clear view of current maturity, key risks, and a prioritized plan to improve ISO 42001 readiness.</p>
+            <p class="meta"><strong>Generated:</strong> ${escapeHtml(generatedAt)}<br><strong>Prepared by:</strong> Align42 Assessment Assistant</p>
           </div>
           <div class="body">
+            <h2>Table of Contents</h2>
+            <div class="toc">
+              <ol>
+                <li>Executive Summary</li>
+                <li>Visual Overview</li>
+                <li>Key Findings and Business Impact</li>
+                <li>Priority Action Plan</li>
+                <li>Roadmap Timeline</li>
+                <li>Detailed Control Results and Next Steps</li>
+                <li>Dimension Summary</li>
+              </ol>
+            </div>
             <h2>Executive Summary</h2>
-            <p>${score >= 80 ? "The organisation has a strong governance baseline and is positioned for targeted remediation to achieve readiness." : score >= 60 ? "The organisation has a workable baseline but requires coordinated uplift across governance, risk, and assurance controls." : "The organisation requires foundational control uplift before ISO 42001 readiness can be demonstrated."}</p>
+            <div class="note">
+              <p><strong>What this means:</strong> ${escapeHtml(readinessText)}</p>
+              <p><strong>Audience context:</strong> ${escapeHtml(executiveLead)}</p>
+              <p><strong>How to use this report:</strong> ${escapeHtml(interpretationGuide)}</p>
+            </div>
             <div class="kpi">
               <div class="card"><div class="label">Weighted score</div><div class="value">${score}%</div></div>
               <div class="card"><div class="label">Control coverage</div><div class="value">${coveragePercent}%</div></div>
               <div class="card"><div class="label">Avg control rating</div><div class="value">${averageRating}/5</div></div>
               <div class="card"><div class="label">Readiness band</div><div class="value" style="font-size:18px;">${escapeHtml(readinessBand)}</div></div>
             </div>
-            ${isAdvancedMode ? `<h2>ISO 42001 Maturity Radar</h2><p>Average maturity by ISO 42001 dimension. Green zone indicates the target threshold for compliance readiness (approximately 4.0/5).</p><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:12px;" alt="ISO 42001 maturity radar chart" />` : ""}
 
-            <h2>Strengths</h2>
-            ${strengths.length ? `<ul>${strengths.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.clause)}) - score ${r.score}/5</li>`).join("")}</ul>` : "<p>No high-confidence strengths identified yet.</p>"}
+            <h2>Visual Overview</h2>
+            <div class="viz-grid">
+              <div>
+                <p><strong>Compliance profile</strong></p>
+                <img src="${complianceChartDataUrl}" alt="Compliance profile chart" />
+              </div>
+              <div>
+                <p><strong>Dimension maturity snapshot</strong></p>
+                <img src="${sectionBarsDataUrl}" alt="Section maturity bar chart" />
+              </div>
+            </div>
+            ${isAdvancedMode ? `<p class="small">Advanced mode includes a radar chart showing ISO 42001 dimension maturity versus the indicative readiness threshold.</p><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:12px;" alt="ISO 42001 maturity radar chart" />` : ""}
 
-            <h2>Critical Findings</h2>
-            ${criticalFindings.length ? `<ul>${criticalFindings.map((f) => `<li><strong>${escapeHtml(f.type)}</strong>${f.controlId ? ` (${escapeHtml(getControl(f.controlId)?.control || f.controlId)})` : ""}: ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
+            <h2>Key Findings and Business Impact</h2>
+            ${criticalFindings.length ? `
+              <ul>
+                ${criticalFindings.map((f) => `<li><span class="pill pill-high">High</span><strong>${escapeHtml(f.type)}</strong>${f.controlId ? ` (${escapeHtml(getControl(f.controlId)?.control || f.controlId)})` : ""}: ${escapeHtml(f.message)}</li>`).join("")}
+              </ul>
+            ` : "<p>No critical findings detected from current responses.</p>"}
+            <p><strong>Top strengths:</strong></p>
+            ${strengths.length ? `<ul>${strengths.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.clause)}) is performing strongly at ${r.score}/5.</li>`).join("")}</ul>` : "<p>No high-confidence strengths identified yet.</p>"}
 
-            <h2>Timeline Roadmap</h2>
-            <div class="timeline-meta">
+            <h2>Priority Action Plan</h2>
+            <p>This plan is designed for non-technical leadership visibility and delivery accountability. Actions are grouped by urgency window and include expected evidence.</p>
+            <table>
+              <tr><th>#</th><th>Action</th><th>Priority</th><th>Owner</th><th>Target Window</th><th>Business Impact if Delayed</th><th>Expected Evidence of Completion</th></tr>
+              ${actionRowsForAudience.map((a) => `<tr>
+                <td>${a.number}</td>
+                <td><strong>${escapeHtml(a.control)}</strong><br><span class="small">${escapeHtml(a.recommendedAction)}</span></td>
+                <td>${escapeHtml(a.priority)}</td>
+                <td>${escapeHtml(a.owner)}</td>
+                <td>${escapeHtml(a.window)} (by ${escapeHtml(a.due)})</td>
+                <td>${escapeHtml(a.businessImpact)}</td>
+                <td>${escapeHtml(a.evidenceExpected)}</td>
+              </tr>`).join("")}
+            </table>
+
+            <h2>Roadmap Timeline</h2>
+            <div class="kpi" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
               <div class="card"><div class="label">Approach</div><div class="value" style="font-size:16px;">${escapeHtml(approachLabel)}</div></div>
               <div class="card"><div class="label">Scenario</div><div class="value" style="font-size:16px;">${escapeHtml(timeline.scenarioLabel)}</div></div>
-              <div class="card"><div class="label">Target input</div><div class="value" style="font-size:16px;">${escapeHtml(timeline.horizonTargetText)}</div></div>
+              <div class="card"><div class="label">Horizon</div><div class="value" style="font-size:16px;">${escapeHtml(horizonSummary)}</div></div>
             </div>
-            <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)}</p>
             <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
-            <div class="timeline-axis">
-              <div>${escapeHtml(formatDateShort(timeline.horizonStart))}<br>Start</div>
-              <div>${escapeHtml(formatDateShort(addDays(timeline.horizonStart, Math.floor((timeline.planningWeeks * 7) / 2))))}<br>Midpoint</div>
-              <div>${escapeHtml(formatDateShort(timeline.horizonEnd))}<br>Horizon end</div>
-            </div>
+            <img class="timeline-img" src="${roadmapDataUrl}" alt="Roadmap timeline chart" />
             <table>
-              <tr><th>#</th><th>Control</th><th>Priority</th><th>Owner</th><th>Start</th><th>Finish</th><th>Duration</th><th>Dependencies</th></tr>
-              ${timelineRows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.control)}</td><td>${escapeHtml(r.priority)}${r.criticalPath ? " (critical)" : ""}</td><td>${escapeHtml(r.owner)}</td><td>${escapeHtml(r.startLabel)}</td><td>${escapeHtml(r.endLabel)}</td><td>${escapeHtml(r.timeframe)}</td><td>${escapeHtml(r.dependency)}</td></tr>`).join("")}
+              <tr><th>#</th><th>Control</th><th>Priority</th><th>Owner</th><th>Start</th><th>Finish</th><th>Dependency Summary</th></tr>
+              ${timelineRows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.control)}</td><td>${escapeHtml(r.priority)}${r.criticalPath ? " (critical path)" : ""}</td><td>${escapeHtml(r.owner)}</td><td>${escapeHtml(r.startLabel)}</td><td>${escapeHtml(r.endLabel)}</td><td>${escapeHtml(r.dependency)}</td></tr>`).join("")}
             </table>
 
-            <h2>Detailed Control Results</h2>
+            <h2>Detailed Control Results and Next Steps</h2>
             <table>
-              <tr><th>Section</th><th>Clause</th><th>Control</th><th>Weight</th><th>Score</th><th>Status</th><th>Notes</th></tr>
-              ${rows.map((r) => `<tr><td>${escapeHtml(r.section)}</td><td>${escapeHtml(r.clause)}</td><td>${escapeHtml(r.control)}</td><td>${r.weight}</td><td>${r.score}</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(r.notes)}</td></tr>`).join("")}
+              <tr><th>Section</th><th>Clause</th><th>Control</th><th>Score</th><th>Status</th><th>Recommended Next Step</th><th>Current Evidence Summary</th></tr>
+              ${rows.map((r) => {
+                const tr = timelineById[r.id];
+                const nextStep = tr ? conciseActionText(tr.method) : "Review control and define a practical uplift action with owner and due date.";
+                const notesSummary = r.notes ? r.notes : "No response captured yet.";
+                return `<tr><td>${escapeHtml(r.section)}</td><td>${escapeHtml(r.clause)}</td><td>${escapeHtml(r.control)}</td><td>${r.score}/5</td><td>${escapeHtml(r.status)}</td><td>${escapeHtml(nextStep)}</td><td>${escapeHtml(notesSummary)}</td></tr>`;
+              }).join("")}
             </table>
+
+            <h2>Dimension Summary</h2>
+            <table>
+              <tr><th>ISO 42001 Dimension</th><th>Average Maturity</th><th>Compliant Controls</th><th>Interpretation</th></tr>
+              ${sectionRows.map((s) => `<tr><td>${escapeHtml(s.section)}</td><td>${s.average.toFixed(1)}/5</td><td>${s.compliantCount}/${s.totalControls}</td><td>${escapeHtml(s.average >= 4 ? "At or near expected readiness threshold." : s.average >= 3 ? "Partially established; strengthen repeatability and evidence." : "Requires foundational uplift and clear ownership.")}</td></tr>`).join("")}
+            </table>
+          </div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  const boardBriefHtml = () => `
+    <html>
+      <body style="font-family:Segoe UI,Arial,sans-serif; margin:0; color:#1a332e; background:#eef5f2;">
+        <div style="max-width:1100px; margin:0 auto; background:#fff; min-height:100vh;">
+          <div style="padding:24px 28px; background:linear-gradient(92deg,#0d7f60,#1a9b73 56%,#2bb58a); color:#fff;">
+            <h1 style="margin:0 0 8px;">Align42 Board Brief</h1>
+            <p style="margin:0 0 4px;"><strong>ISO 42001 Readiness Snapshot</strong></p>
+            <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Generated:</strong> ${escapeHtml(generatedAt)}</p>
+          </div>
+          <div style="padding:20px 26px;">
+            <p><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
+            <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
+              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
+              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
+              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Control coverage</div><div style="font-size:24px; font-weight:700;">${coveragePercent}%</div></div>
+              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Avg maturity</div><div style="font-size:24px; font-weight:700;">${averageRating}/5</div></div>
+            </div>
+            <img src="${complianceChartDataUrl}" style="width:42%; min-width:320px; border:1px solid #d5e4dc; border-radius:10px; float:right; margin:0 0 10px 16px;" alt="Compliance chart" />
+            <h2 style="margin:0 0 8px;">Top Risks Requiring Board Attention</h2>
+            ${criticalFindings.length ? `<ul style="margin-top:0;">${criticalFindings.slice(0, 4).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical contradictions detected from current data.</p>"}
+            <h2 style="margin:14px 0 8px;">Immediate Decisions / Actions</h2>
+            <table style="width:100%; border-collapse:collapse;">
+              <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Priority Action</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Owner</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">By When</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Why It Matters</th></tr>
+              ${actionPlan.slice(0, 5).map((a) => `<tr><td style="border:1px solid #d6e5dd; padding:7px;"><strong>${escapeHtml(a.control)}</strong><br><span style="font-size:11px; color:#607a72;">${escapeHtml(a.recommendedAction)}</span></td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.owner)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.window)} (by ${escapeHtml(a.due)})</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.businessImpact)}</td></tr>`).join("")}
+            </table>
+            <p style="clear:both; margin-top:14px;"><strong>Roadmap context:</strong> ${escapeHtml(horizonSummary)} | ${escapeHtml(approachLabel)} approach | ${escapeHtml(timeline.scenarioLabel)} scenario.</p>
           </div>
         </div>
       </body>
@@ -3737,6 +4055,12 @@ function renderFinal(assessment) {
       <div class="tile"><h3>Constraint Mode</h3><p><strong>${escapeHtml(timeline.scenarioLabel)}</strong></p></div>
       <div class="tile"><h3>Readiness Band</h3><p><strong>${escapeHtml(readinessBand)}</strong></p></div>
     </div>
+
+    <div class="question question-focus">
+      <h3>Communication Style</h3>
+      <p class="hint"><strong>Fixed mode:</strong> ${escapeHtml(audienceLabel)}</p>
+      <p class="hint">All outputs use a compliance-focused tone aligned to ISO 42001 readiness.</p>
+    </div>
     ${isAdvancedMode ? `
     <h3>🕸 ISO 42001 Maturity Radar</h3>
     <div class="question radar-wrap">
@@ -3760,7 +4084,10 @@ function renderFinal(assessment) {
     </div>
 
     <h3>1) 📊 Summary Dashboard</h3>
-    <div class="actions"><button class="btn secondary" id="downloadDeckBtn">Download summary deck (.ppt)</button></div>
+    <div class="actions">
+      <button class="btn secondary" id="downloadDeckBtn">Download summary deck (.ppt)</button>
+      <button class="btn secondary" id="downloadBoardBriefBtn">Download board brief (.doc)</button>
+    </div>
 
     <h3>2) 📄 Detailed Assessment Report</h3>
     <div class="actions">
@@ -3851,35 +4178,56 @@ function renderFinal(assessment) {
 
   document.getElementById("downloadDeckBtn").addEventListener("click", () => {
     const content = `
-      <html><body style="font-family:Segoe UI,Arial,sans-serif; color:#19312c; margin:0;">
-      <div style="padding:22px; background:linear-gradient(90deg,#0d7f60,#22ac7d); color:#fff;">
-        <h1 style="margin:0 0 10px;">Align42 Summary Dashboard</h1>
-        <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+      <html><body style="font-family:Segoe UI,Arial,sans-serif; color:#18312c; margin:0; background:#eef5f2;">
+      <div style="max-width:1160px; margin:0 auto; background:#fff;">
+      <div style="padding:24px 28px; background:linear-gradient(90deg,#0d7f60,#22ac7d); color:#fff;">
+        <h1 style="margin:0 0 10px;">Align42 Executive Summary Dashboard</h1>
+        <p style="margin:0 0 4px;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+        <p style="margin:0;"><strong>Generated:</strong> ${escapeHtml(generatedAt)}</p>
       </div>
-      <div style="padding:22px;">
-        <p><strong>Weighted score:</strong> ${score}% | <strong>Control coverage:</strong> ${coveragePercent}% | <strong>Average rating:</strong> ${averageRating}/5</p>
+      <div style="padding:20px 26px;">
+        <p><strong>Summary:</strong> ${escapeHtml(readinessText)}</p>
+        <p><strong>Audience mode:</strong> ${escapeHtml(audienceLabel)}</p>
+        <p><strong>Interpretation guide:</strong> ${escapeHtml(interpretationGuide)}</p>
+        <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:12px 0;">
+          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
+          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Control coverage</div><div style="font-size:24px; font-weight:700;">${coveragePercent}%</div></div>
+          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Average maturity</div><div style="font-size:24px; font-weight:700;">${averageRating}/5</div></div>
+          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
+        </div>
         <p><strong>Approach / Scenario:</strong> ${escapeHtml(approachLabel)} / ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Target:</strong> ${escapeHtml(timeline.horizonTargetText)}</p>
-        <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
-        ${isAdvancedMode ? `<h2>ISO 42001 Maturity Radar</h2><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="ISO 42001 maturity radar chart" />` : ""}
-        <h2>Top Priorities</h2>
-        <ol>${urgent.length ? urgent.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.priority)}${r.criticalPath ? ", critical path" : ""}) - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)}</li>`).join("") : "<li>No urgent actions generated yet.</li>"}</ol>
-        <h2>Critical Findings</h2>
-        ${criticalFindings.length ? `<ul>${criticalFindings.slice(0, 8).map((f) => `<li>${escapeHtml(f.type)}: ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
+        <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Target input:</strong> ${escapeHtml(timeline.horizonTargetText)}</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+          <img src="${complianceChartDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="Compliance profile chart" />
+          <img src="${sectionBarsDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="Section maturity chart" />
+        </div>
+        ${isAdvancedMode ? `<h2 style="margin-top:18px;">ISO 42001 Maturity Radar</h2><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="ISO 42001 maturity radar chart" />` : ""}
+        <h2 style="margin-top:18px;">Top Actions for Leadership Attention</h2>
+        <table style="width:100%; border-collapse:collapse;">
+          <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Action</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Owner</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Target</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Why it matters</th></tr>
+          ${actionRowsForAudience.map((a) => `<tr><td style="border:1px solid #d6e5dd; padding:7px;"><strong>${escapeHtml(a.control)}</strong><br><span style="font-size:11px; color:#5f7b72;">${escapeHtml(a.recommendedAction)}</span></td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.owner)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.window)} (by ${escapeHtml(a.due)})</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.businessImpact)}</td></tr>`).join("")}
+        </table>
+        <h2 style="margin-top:18px;">Roadmap Timeline</h2>
+        <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="Roadmap timeline chart" />
+        <h2 style="margin-top:18px;">Critical Findings</h2>
+        ${criticalFindings.length ? `<ul>${criticalFindings.slice(0, 8).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
+      </div>
       </div>
       </body></html>
     `;
     download("align42-summary-dashboard.ppt", "application/vnd.ms-powerpoint", content);
   });
+  document.getElementById("downloadBoardBriefBtn").addEventListener("click", () => {
+    download("align42-board-brief.doc", "application/msword", boardBriefHtml());
+  });
 
   document.getElementById("downloadCsvBtn").addEventListener("click", () => {
-    const byTimelineId = Object.fromEntries(timeline.items.map((x) => [x.id, x]));
-    const header = ["Section", "Clause", "Control", "Weight", "Score", "Status", "Priority", "Owner", "Start Date", "Finish Date", "Duration Weeks", "Notes", "Links", "Files", "Findings"];
+    const header = ["Section", "Clause", "Control", "Weight", "Score", "Status", "Priority", "Owner", "Start Date", "Finish Date", "Duration Weeks", "Action Window", "Business Impact if Delayed", "Recommended Action", "Expected Evidence", "Notes", "Links", "Files", "Findings"];
     const csv = [header.map(csvEscape).join(",")].concat(rows.map((r) => {
-      const control = allControls().find((c) => c.control === r.control && c.clause === r.clause);
-      const controlFindings = findings.filter((f) => f.controlId && control && f.controlId === control.id).map((f) => `[${f.severity}] ${f.type}: ${f.message}`).join(" | ");
-      const tr = control ? byTimelineId[control.id] : null;
-      return [r.section, r.clause, r.control, r.weight, r.score, r.status, tr?.priority || "", tr?.owner || "", tr?.startLabel || "", tr?.endLabel || "", tr?.durationWeeks || "", r.notes, r.links.join(" | "), r.files.join(" | "), controlFindings].map(csvEscape).join(",");
+      const controlFindings = findings.filter((f) => f.controlId && f.controlId === r.id).map((f) => `[${f.severity}] ${f.type}: ${f.message}`).join(" | ");
+      const tr = timelineById[r.id] || null;
+      const expected = conciseActionText((getControl(r.id)?.bestPractice || "").replace(/^([a-z])/i, (m) => m.toUpperCase()));
+      return [r.section, r.clause, r.control, r.weight, r.score, r.status, tr?.priority || "", tr?.owner || "", tr?.startLabel || "", tr?.endLabel || "", tr?.durationWeeks || "", tr ? actionWindowLabel(tr.endWeekScaled || 0) : "", tr ? businessImpactFromPriority(tr.priority) : "", tr ? conciseActionText(tr.method) : "", expected, r.notes, r.links.join(" | "), r.files.join(" | "), controlFindings].map(csvEscape).join(",");
     })).join("\n");
     download("align42-detailed-assessment.csv", "text/csv", csv);
   });
@@ -3904,24 +4252,48 @@ function renderFinal(assessment) {
   });
 
   document.getElementById("downloadRoadmapPngBtn").addEventListener("click", () => {
-    const canvas = buildRoadmapCanvas(assessment);
     const a = document.createElement("a");
-    a.href = canvas.toDataURL("image/png");
+    a.href = roadmapDataUrl;
     a.download = "align42-roadmap.png";
     a.click();
   });
 
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
-    const canvas = buildRoadmapCanvas(assessment);
-    const html = `<html><body><h1>Align42 Timeline Roadmap</h1><img src="${canvas.toDataURL("image/png")}" style="width:100%" /></body></html>`;
+    const html = `<html><body style="margin:0; font-family:Segoe UI,Arial,sans-serif; color:#1b332f; background:#eef5f2;">
+      <div style="max-width:1160px; margin:0 auto; background:#fff;">
+        <div style="padding:22px 26px; background:linear-gradient(90deg,#0d7f60,#22ac7d); color:#fff;">
+          <h1 style="margin:0 0 8px;">Align42 Compliance Readiness Roadmap</h1>
+          <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+        </div>
+        <div style="padding:20px 26px;">
+          <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+          <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+          <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
+          <h2>Top Priority Actions</h2>
+          <table style="width:100%; border-collapse:collapse;">
+            <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Control</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Owner</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Window</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Action</th></tr>
+            ${actionPlan.slice(0, 8).map((a) => `<tr><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.control)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.owner)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.window)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.recommendedAction)}</td></tr>`).join("")}
+          </table>
+        </div>
+      </div>
+    </body></html>`;
     download("align42-roadmap.ppt", "application/vnd.ms-powerpoint", html);
   });
 
   document.getElementById("downloadRoadmapPdfBtn").addEventListener("click", () => {
-    const canvas = buildRoadmapCanvas(assessment);
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(`<html><body style="margin:0;"><img src="${canvas.toDataURL("image/png")}" style="width:100%" /></body></html>`);
+    w.document.write(`<html><body style="margin:0; font-family:Segoe UI,Arial,sans-serif; color:#1b332f;">
+      <div style="padding:18px 20px;">
+        <h1 style="margin:0 0 8px;">Align42 Compliance Readiness Roadmap</h1>
+        <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+        <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
+        <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
+        <h2>Priority Actions</h2>
+        <ul>${actionPlan.slice(0, 8).map((a) => `<li><strong>${escapeHtml(a.control)}</strong> - ${escapeHtml(a.window)} (${escapeHtml(a.owner)}): ${escapeHtml(a.recommendedAction)}</li>`).join("")}</ul>
+      </div>
+    </body></html>`);
     w.document.close();
     w.focus();
     w.print();
