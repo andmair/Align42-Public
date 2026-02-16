@@ -82,7 +82,37 @@ cat > "$TMP_DIR/macos_installer/README-Mac-Install.txt" <<'EOF'
 EOF
 
 rm -f "$MAC_ZIP_INSTALLER"
-(cd "$TMP_DIR/macos_installer" && zip -qr "$MAC_ZIP_INSTALLER" "Align42" "Open Align42 Home.command" "README-Mac-Install.txt")
+python3 - "$TMP_DIR/macos_installer" "$MAC_ZIP_INSTALLER" <<'PY'
+import os
+import pathlib
+import stat
+import sys
+import time
+import zipfile
+
+src = pathlib.Path(sys.argv[1]).resolve()
+dst = pathlib.Path(sys.argv[2]).resolve()
+dst.parent.mkdir(parents=True, exist_ok=True)
+
+def normalize_arcname(path: pathlib.Path) -> str:
+    return str(path.relative_to(src)).replace(os.sep, "/")
+
+with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+    for path in sorted(src.rglob("*")):
+        if path.is_dir():
+            continue
+        arc = normalize_arcname(path)
+        info = zipfile.ZipInfo(arc)
+        info.compress_type = zipfile.ZIP_DEFLATED
+        mtime = max(path.stat().st_mtime, 315532800)  # ZIP minimum date is 1980-01-01
+        info.date_time = time.localtime(mtime)[:6]
+        # Use Unix metadata and preserve executable bit for launch scripts.
+        info.create_system = 3
+        mode = stat.S_IMODE(path.stat().st_mode)
+        info.external_attr = (mode & 0xFFFF) << 16
+        with path.open("rb") as f:
+            zf.writestr(info, f.read())
+PY
 
 WIN_STAGE="$TMP_DIR/windows_installer/Align42"
 mkdir -p "$WIN_STAGE"
