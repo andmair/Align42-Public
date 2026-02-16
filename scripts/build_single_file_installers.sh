@@ -82,7 +82,11 @@ cat > "$TMP_DIR/macos_installer/README-Mac-Install.txt" <<'EOF'
 EOF
 
 rm -f "$MAC_ZIP_INSTALLER"
-python3 - "$TMP_DIR/macos_installer" "$MAC_ZIP_INSTALLER" <<'PY'
+if command -v ditto >/dev/null 2>&1; then
+  # Native macOS zip writer for maximum Finder/Archive Utility compatibility.
+  (cd "$TMP_DIR" && ditto -c -k --sequesterRsrc --keepParent "macos_installer" "$MAC_ZIP_INSTALLER")
+else
+  python3 - "$TMP_DIR/macos_installer" "$MAC_ZIP_INSTALLER" <<'PY'
 import os
 import pathlib
 import stat
@@ -113,6 +117,7 @@ with zipfile.ZipFile(dst, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
         with path.open("rb") as f:
             zf.writestr(info, f.read())
 PY
+fi
 
 WIN_STAGE="$TMP_DIR/windows_installer/Align42"
 mkdir -p "$WIN_STAGE"
