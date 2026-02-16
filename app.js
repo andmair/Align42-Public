@@ -2806,7 +2806,7 @@ function renderContext(assessment, section) {
         if (!options.includes(assessment.data.context.industrySubSector || "")) assessment.data.context.industrySubSector = "";
       }
       scheduleAssessmentSave(assessment);
-      if (["country", "industrySector", "industrySubSector", "orgName", "businessOverview"].includes(field)) renderContext(assessment, section);
+      if (["country", "industrySector", "industrySubSector"].includes(field)) renderContext(assessment, section);
     });
   });
 
