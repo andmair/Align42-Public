@@ -725,14 +725,13 @@ function localisationSourceLabel(source) {
 
 function localContextDefaults() {
   const detected = detectLocalCountry();
-  const country = normalizeCountryName(detected.country);
-  if (!country) return {};
+  const country = normalizeCountryName(detected.country) || "Australia";
   const frameworkSeed = baseFrameworksForContext({ country });
   return {
     country,
     frameworkSuggestions: frameworkSeed.slice(),
     applicableFrameworks: frameworkSeed.slice(),
-    localisationSource: detected.source || "local"
+    localisationSource: detected.source || "default"
   };
 }
 
