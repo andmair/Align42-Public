@@ -100,6 +100,37 @@ Output:
 
 - `dist/files/Align42`
 
+## Docker Deployment
+
+Build the container image:
+
+```bash
+docker build -t app .
+```
+
+Run locally:
+
+```bash
+docker run -p 3000:3000 app
+```
+
+Then open:
+
+`http://localhost:3000/Align42.html`
+
+Push to a container registry:
+
+```bash
+docker tag app your-registry.example.com/align42:latest
+docker push your-registry.example.com/align42:latest
+```
+
+Optional local compose workflow:
+
+```bash
+docker compose up --build
+```
+
 Windows `.exe` installer is deprecated for now and is not rebuilt by default.
 To build it explicitly in future:
 
