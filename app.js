@@ -4516,6 +4516,8 @@ function renderFinal(assessment) {
   const actionRowsForAudience = actionPlan;
   const timelineById = Object.fromEntries(timeline.items.map((x) => [x.id, x]));
   const generatedAt = new Date().toLocaleString();
+  const preparedFor = state.profile?.name || "User";
+  const orgDisplay = assessment.data.context?.orgName || "Organisation";
   const complianceChartDataUrl = buildComplianceDonutCanvas(compliant, total, 420).toDataURL("image/png");
   const sectionBarsDataUrl = buildSectionMaturityBarsCanvas(assessment, 980, 430).toDataURL("image/png");
   const roadmapCanvasForExport = buildRoadmapCanvas(assessment);
@@ -4523,49 +4525,168 @@ function renderFinal(assessment) {
   const radarForExport = isAdvancedMode ? buildMaturityRadarCanvas(assessment, 920) : null;
   const radarDataUrl = radarForExport ? radarForExport.toDataURL("image/png") : "";
 
-  const reportHtml = () => `
+  const documentShell = (reportName, innerHtml) => `
     <html>
       <head>
         <style>
-          body { font-family: "Segoe UI", Arial, sans-serif; color: #1b2f2c; margin: 0; background: #edf4f1; }
-          .page { max-width: 1180px; margin: 0 auto; background: #ffffff; min-height: 100vh; }
-          .cover { background: linear-gradient(96deg, #0d7f60, #1a9b73 56%, #2bb58a); color: #fff; padding: 52px 44px; min-height: 360px; }
-          .cover h1 { margin: 0 0 10px; font-size: 38px; letter-spacing: 0.01em; }
-          .cover h2 { margin: 0 0 18px; font-size: 20px; border: 0; color: #e7fff4; padding: 0; }
-          .cover p { margin: 6px 0; font-size: 15px; line-height: 1.45; }
-          .cover .meta { margin-top: 26px; font-size: 13px; opacity: 0.98; }
-          .body { padding: 24px 36px 40px; }
-          h2 { margin: 26px 0 12px; font-size: 21px; color: #0d3a31; border-bottom: 1px solid #d5e4dc; padding-bottom: 6px; }
-          h3 { margin: 14px 0 8px; font-size: 16px; color: #17493f; }
-          p { line-height: 1.5; margin: 6px 0; }
-          ul { margin-top: 8px; margin-bottom: 8px; }
-          .toc { border: 1px solid #d5e4dc; border-radius: 12px; background: #f8fcfa; padding: 14px; }
-          .toc ol { margin: 8px 0 4px 18px; }
-          .toc li { margin-bottom: 6px; }
-          .note { border: 1px solid #cde0d6; background: #f5fbf8; border-radius: 12px; padding: 12px 14px; }
-          .kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
-          .card { border: 1px solid #d8e7df; border-radius: 12px; padding: 12px; background: #f8fcfa; }
-          .card .label { font-size: 11px; color: #537168; text-transform: uppercase; letter-spacing: 0.05em; }
-          .card .value { font-size: 24px; margin-top: 4px; color: #12332d; font-weight: 700; }
-          .viz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
-          .viz-grid img { width: 100%; border: 1px solid #d5e4dc; border-radius: 10px; background: #f8fcfa; }
-          .pill { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 3px 8px; margin-right: 6px; }
-          .pill-high { background: #ffe5e5; color: #8e2f2f; }
-          table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-          th, td { border: 1px solid #d7e5de; padding: 8px; font-size: 12px; vertical-align: top; }
-          th { background: #eef6f2; text-align: left; }
-          .small { font-size: 11px; color: #607d73; }
-          .timeline-img { width: 100%; border: 1px solid #d5e4dc; border-radius: 12px; margin-top: 8px; }
+          @page { size: A4; margin: 2cm; }
+          :root {
+            --doc-text: #16312b;
+            --doc-muted: #4a635d;
+            --doc-bg: #f6f8f7;
+            --doc-surface: #ffffff;
+            --doc-line: #c7d7d1;
+            --doc-accent: #005a4f;
+            --doc-accent-soft: #e6f2ef;
+            --doc-good: #16643b;
+            --doc-warn: #8a5a00;
+            --doc-bad: #8f2d2d;
+          }
+          * { box-sizing: border-box; }
+          body {
+            font-family: "Aptos", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            color: var(--doc-text);
+            margin: 0;
+            background: var(--doc-bg);
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+          .doc-header, .doc-footer {
+            position: fixed;
+            left: 0;
+            right: 0;
+            color: var(--doc-muted);
+            font-size: 10pt;
+          }
+          .doc-header {
+            top: 0;
+            padding: 0 2cm 0.35cm;
+            border-bottom: 1px solid var(--doc-line);
+          }
+          .doc-footer {
+            bottom: 0;
+            padding: 0.35cm 2cm 0;
+            border-top: 1px solid var(--doc-line);
+          }
+          .doc-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+          }
+          .doc-main {
+            padding-top: 1.2cm;
+            padding-bottom: 1.1cm;
+          }
+          .page {
+            max-width: 17cm;
+            margin: 0 auto;
+            background: var(--doc-surface);
+          }
+          .cover {
+            background: linear-gradient(135deg, #005a4f, #0b7668);
+            color: #ffffff;
+            padding: 1.2cm;
+            min-height: 20cm;
+          }
+          .cover h1 { margin: 0 0 0.2cm; font-size: 26pt; }
+          .cover h2 { margin: 0 0 0.5cm; font-size: 15pt; font-weight: 600; }
+          .cover p { margin: 0.14cm 0; line-height: 1.45; }
+          .body { padding: 0.6cm 0.2cm 0.3cm; }
+          h2 {
+            margin: 0.7cm 0 0.28cm;
+            font-size: 15pt;
+            color: var(--doc-accent);
+            border-bottom: 1px solid var(--doc-line);
+            padding-bottom: 0.12cm;
+          }
+          h3 { margin: 0.35cm 0 0.18cm; font-size: 11.5pt; color: var(--doc-text); }
+          p, li, td, th { font-size: 10.5pt; line-height: 1.45; }
+          ul, ol { margin: 0.18cm 0 0.24cm 0.5cm; }
+          .toc, .note, .card {
+            border: 1px solid var(--doc-line);
+            border-radius: 10px;
+            background: #fbfcfc;
+            padding: 0.28cm 0.32cm;
+          }
+          .kpi {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.22cm;
+            margin-top: 0.22cm;
+          }
+          .card .label {
+            font-size: 8.5pt;
+            color: var(--doc-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+          }
+          .card .value {
+            font-size: 18pt;
+            margin-top: 0.08cm;
+            color: var(--doc-text);
+            font-weight: 700;
+          }
+          .viz-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.28cm; margin-top: 0.22cm; }
+          .viz-grid img, .timeline-img {
+            width: 100%;
+            border: 1px solid var(--doc-line);
+            border-radius: 10px;
+            background: #ffffff;
+          }
+          .pill {
+            display: inline-block;
+            font-size: 8.5pt;
+            font-weight: 700;
+            border-radius: 999px;
+            padding: 0.04cm 0.18cm;
+            margin-right: 0.12cm;
+          }
+          .pill-high { background: #fbe4e4; color: var(--doc-bad); }
+          .icon-chip {
+            display: inline-block;
+            font-weight: 700;
+            color: var(--doc-accent);
+            margin-right: 0.14cm;
+          }
+          table { width: 100%; border-collapse: collapse; margin-top: 0.22cm; }
+          th, td { border: 1px solid var(--doc-line); padding: 0.14cm; text-align: left; vertical-align: top; }
+          th { background: var(--doc-accent-soft); }
+          .small { font-size: 9pt; color: var(--doc-muted); }
           .break-after { page-break-after: always; }
-          @media (max-width: 1000px) { .kpi { grid-template-columns: 1fr 1fr; } .viz-grid { grid-template-columns: 1fr; } }
+          .page-no::after { content: counter(page); }
+          @media (max-width: 900px) {
+            .kpi { grid-template-columns: 1fr 1fr; }
+            .viz-grid { grid-template-columns: 1fr; }
+          }
         </style>
       </head>
       <body>
+        <div class="doc-header">
+          <div class="doc-row">
+            <div><strong>${escapeHtml(reportName)}</strong> - ${escapeHtml(orgDisplay)}</div>
+            <div>Prepared for: ${escapeHtml(preparedFor)}</div>
+          </div>
+        </div>
+        <div class="doc-footer">
+          <div class="doc-row">
+            <div>${escapeHtml(generatedAt)}</div>
+            <div>Page <span class="page-no"></span></div>
+          </div>
+        </div>
+        <main class="doc-main">${innerHtml}</main>
+      </body>
+    </html>
+  `;
+
+  const reportHtml = () => documentShell("ISO 42001 Readiness Assessment Report", `
         <div class="page">
           <div class="cover break-after">
             <h1>Align42</h1>
             <h2>ISO 42001 Readiness Assessment Report</h2>
             <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+            <p><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
+            <p><strong>Organisation:</strong> ${escapeHtml(orgDisplay)}</p>
             <p><strong>Audience Mode:</strong> ${escapeHtml(audienceLabel)}</p>
             <p><strong>Report Purpose:</strong> Provide a clear view of current maturity, key risks, and a prioritized plan to improve ISO 42001 readiness.</p>
             <p class="meta"><strong>Generated:</strong> ${escapeHtml(generatedAt)}<br><strong>Prepared by:</strong> Align42 Assessment Assistant</p>
@@ -4585,9 +4706,9 @@ function renderFinal(assessment) {
             </div>
             <h2>Executive Summary</h2>
             <div class="note">
-              <p><strong>What this means:</strong> ${escapeHtml(readinessText)}</p>
-              <p><strong>Audience context:</strong> ${escapeHtml(executiveLead)}</p>
-              <p><strong>How to use this report:</strong> ${escapeHtml(interpretationGuide)}</p>
+              <p><span class="icon-chip">[Summary]</span><strong>What this means:</strong> ${escapeHtml(readinessText)}</p>
+              <p><span class="icon-chip">[Audience]</span><strong>Audience context:</strong> ${escapeHtml(executiveLead)}</p>
+              <p><span class="icon-chip">[Guide]</span><strong>How to use this report:</strong> ${escapeHtml(interpretationGuide)}</p>
             </div>
             <div class="kpi">
               <div class="card"><div class="label">Weighted score</div><div class="value">${score}%</div></div>
@@ -4599,11 +4720,11 @@ function renderFinal(assessment) {
             <h2>Visual Overview</h2>
             <div class="viz-grid">
               <div>
-                <p><strong>Compliance profile</strong></p>
+                <p><span class="icon-chip">[Chart]</span><strong>Compliance profile</strong></p>
                 <img src="${complianceChartDataUrl}" alt="Compliance profile chart" />
               </div>
               <div>
-                <p><strong>Dimension maturity snapshot</strong></p>
+                <p><span class="icon-chip">[Chart]</span><strong>Dimension maturity snapshot</strong></p>
                 <img src="${sectionBarsDataUrl}" alt="Section maturity bar chart" />
               </div>
             </div>
@@ -4664,21 +4785,17 @@ function renderFinal(assessment) {
             </table>
           </div>
         </div>
-      </body>
-    </html>
-  `;
+  `);
 
-  const boardBriefHtml = () => `
-    <html>
-      <body style="font-family:Segoe UI,Arial,sans-serif; margin:0; color:#1a332e; background:#eef5f2;">
+  const boardBriefHtml = () => documentShell("Board Brief", `
         <div style="max-width:1100px; margin:0 auto; background:#fff; min-height:100vh;">
-          <div style="padding:24px 28px; background:linear-gradient(92deg,#0d7f60,#1a9b73 56%,#2bb58a); color:#fff;">
+          <div class="cover" style="min-height:unset;">
             <h1 style="margin:0 0 8px;">Align42 Board Brief</h1>
             <p style="margin:0 0 4px;"><strong>ISO 42001 Readiness Snapshot</strong></p>
-            <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Generated:</strong> ${escapeHtml(generatedAt)}</p>
+            <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
-          <div style="padding:20px 26px;">
-            <p><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
+          <div class="body" style="padding:20px 26px;">
+            <p><span class="icon-chip">[Summary]</span><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
             <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
@@ -4696,19 +4813,15 @@ function renderFinal(assessment) {
             <p style="clear:both; margin-top:14px;"><strong>Roadmap context:</strong> ${escapeHtml(horizonSummary)} | ${escapeHtml(approachLabel)} approach | ${escapeHtml(timeline.scenarioLabel)} scenario.</p>
           </div>
         </div>
-      </body>
-    </html>
-  `;
+  `);
 
-  const demoSampleReportHtml = () => `
-    <html>
-      <body style="font-family:Segoe UI,Arial,sans-serif; margin:0; background:#eef5f2; color:#18312c;">
+  const demoSampleReportHtml = () => documentShell("Demo Sample Report", `
         <div style="max-width:1040px; margin:0 auto; background:#fff; min-height:100vh;">
-          <div style="background:linear-gradient(90deg,#0d7f60,#23ab7d); color:#fff; padding:24px 28px;">
+          <div class="cover" style="min-height:unset;">
             <h1 style="margin:0 0 8px;">Align42 Demo Sample Report</h1>
-            <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+            <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
-          <div style="padding:22px 28px;">
+          <div class="body" style="padding:22px 28px;">
             <h2>Sample Executive Summary</h2>
             <p>This sample report demonstrates a low-maturity/high-ambition scenario for a mid-sized Australian technology manufacturer. The current control baseline is early-stage, while strategic ambition requires rapid formalization of governance, risk, and operational assurance controls.</p>
             <ul>
@@ -4729,19 +4842,15 @@ function renderFinal(assessment) {
             <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample deliverable generated for demonstration mode and should be tailored before real use.</em></p>
           </div>
         </div>
-      </body>
-    </html>
-  `;
+  `);
 
-  const demoSampleRoadmapHtml = () => `
-    <html>
-      <body style="font-family:Segoe UI,Arial,sans-serif; margin:0; color:#17322d; background:#f1f7f3;">
+  const demoSampleRoadmapHtml = () => documentShell("Demo Sample Roadmap", `
         <div style="max-width:1160px; margin:0 auto; background:#fff; min-height:100vh;">
-          <div style="background:linear-gradient(90deg,#0d7f60,#23ab7d); color:#fff; padding:24px 30px;">
+          <div class="cover" style="min-height:unset;">
             <h1 style="margin:0 0 8px;">Align42 Demo Sample Roadmap</h1>
-            <p style="margin:0;"><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+            <p style="margin:0;"><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
-          <div style="padding:22px 30px;">
+          <div class="body" style="padding:22px 30px;">
             <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
             <table style="width:100%; border-collapse:collapse; margin-top:10px;">
               <tr>
@@ -4776,9 +4885,7 @@ function renderFinal(assessment) {
             <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample roadmap output for demonstration mode and should be adapted to live evidence and delivery constraints.</em></p>
           </div>
         </div>
-      </body>
-    </html>
-  `;
+  `);
 
   root.innerHTML = `
     <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Final Outputs</h2><p class="section-desc">Generate artifacts and finalize readiness actions.</p></div></div>
@@ -4915,18 +5022,17 @@ function renderFinal(assessment) {
   }
 
   document.getElementById("downloadDeckBtn").addEventListener("click", () => {
-    const content = `
-      <html><body style="font-family:Segoe UI,Arial,sans-serif; color:#18312c; margin:0; background:#eef5f2;">
+    const content = documentShell("Summary Dashboard", `
       <div style="max-width:1160px; margin:0 auto; background:#fff;">
-      <div style="padding:24px 28px; background:linear-gradient(90deg,#0d7f60,#22ac7d); color:#fff;">
+      <div class="cover" style="min-height:unset;">
         <h1 style="margin:0 0 10px;">Align42 Executive Summary Dashboard</h1>
         <p style="margin:0 0 4px;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
-        <p style="margin:0;"><strong>Generated:</strong> ${escapeHtml(generatedAt)}</p>
+        <p style="margin:0;"><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
       </div>
-      <div style="padding:20px 26px;">
-        <p><strong>Summary:</strong> ${escapeHtml(readinessText)}</p>
-        <p><strong>Audience mode:</strong> ${escapeHtml(audienceLabel)}</p>
-        <p><strong>Interpretation guide:</strong> ${escapeHtml(interpretationGuide)}</p>
+      <div class="body" style="padding:20px 26px;">
+        <p><span class="icon-chip">[Summary]</span><strong>Summary:</strong> ${escapeHtml(readinessText)}</p>
+        <p><span class="icon-chip">[Audience]</span><strong>Audience mode:</strong> ${escapeHtml(audienceLabel)}</p>
+        <p><span class="icon-chip">[Guide]</span><strong>Interpretation guide:</strong> ${escapeHtml(interpretationGuide)}</p>
         <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:12px 0;">
           <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
           <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Control coverage</div><div style="font-size:24px; font-weight:700;">${coveragePercent}%</div></div>
@@ -4951,8 +5057,7 @@ function renderFinal(assessment) {
         ${criticalFindings.length ? `<ul>${criticalFindings.slice(0, 8).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
       </div>
       </div>
-      </body></html>
-    `;
+    `);
     download("align42-summary-dashboard.ppt", "application/vnd.ms-powerpoint", content);
   });
   document.getElementById("downloadBoardBriefBtn").addEventListener("click", () => {
@@ -4997,15 +5102,15 @@ function renderFinal(assessment) {
   });
 
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
-    const html = `<html><body style="margin:0; font-family:Segoe UI,Arial,sans-serif; color:#1b332f; background:#eef5f2;">
+    const html = documentShell("Compliance Readiness Roadmap", `
       <div style="max-width:1160px; margin:0 auto; background:#fff;">
-        <div style="padding:22px 26px; background:linear-gradient(90deg,#0d7f60,#22ac7d); color:#fff;">
+        <div class="cover" style="min-height:unset;">
           <h1 style="margin:0 0 8px;">Align42 Compliance Readiness Roadmap</h1>
-          <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
+          <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
         </div>
-        <div style="padding:20px 26px;">
-          <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-          <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+        <div class="body" style="padding:20px 26px;">
+          <p><span class="icon-chip">[Plan]</span><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+          <p><span class="icon-chip">[Timeline]</span><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
           <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
           <h2>Top Priority Actions</h2>
           <table style="width:100%; border-collapse:collapse;">
@@ -5014,24 +5119,24 @@ function renderFinal(assessment) {
           </table>
         </div>
       </div>
-    </body></html>`;
+    `);
     download("align42-roadmap.ppt", "application/vnd.ms-powerpoint", html);
   });
 
   document.getElementById("downloadRoadmapPdfBtn").addEventListener("click", () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(`<html><body style="margin:0; font-family:Segoe UI,Arial,sans-serif; color:#1b332f;">
+    w.document.write(documentShell("Compliance Readiness Roadmap", `
       <div style="padding:18px 20px;">
         <h1 style="margin:0 0 8px;">Align42 Compliance Readiness Roadmap</h1>
-        <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
-        <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
+        <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
+        <p><span class="icon-chip">[Plan]</span><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+        <p><span class="icon-chip">[Timeline]</span><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
         <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
         <h2>Priority Actions</h2>
         <ul>${actionPlan.slice(0, 8).map((a) => `<li><strong>${escapeHtml(a.control)}</strong> - ${escapeHtml(a.window)} (${escapeHtml(a.owner)}): ${escapeHtml(a.recommendedAction)}</li>`).join("")}</ul>
       </div>
-    </body></html>`);
+    `));
     w.document.close();
     w.focus();
     w.print();
