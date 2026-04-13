@@ -2131,7 +2131,7 @@ function renderDelegationsPage(assessment) {
           <p>${escapeHtml(assessment.title)} | ${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
         </div>
         <div class="actions">
-          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
+          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn secondary" id="refreshDelegationsBtn">↻ Refresh</button>
           <button class="btn ghost" id="backToAssessmentBtn">← Back to Assessment</button>
         </div>
@@ -2333,7 +2333,7 @@ function renderWelcome() {
           <p>${escapeHtml(state.profile?.name || "Profile not set")} (${escapeHtml(state.profile?.email || "email not set")})</p>
         </div>
         <div class="actions">
-          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
+          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
           ${mode === "simple" ? `<button class="btn secondary" id="demoAssessmentBtn">🧪 Demo Assessment</button>` : ""}
           <button class="btn ghost" id="editProfileBtn">👤 Edit Profile</button>
@@ -2693,7 +2693,7 @@ function renderAssessment(assessment) {
           <p>${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
         </div>
         <div class="actions">
-          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standard</a>
+          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn warn" id="delegateBtn">${section.type === "controls" ? (delegateOpen ? "📨 Hide Delegate" : "📨 Delegate") : "Delegate (Controls only)"}</button>
           <button class="btn secondary" id="delegationsBtn">📋 Delegations</button>
           <button class="btn secondary" id="saveBtn">💾 Save</button>
