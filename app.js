@@ -664,6 +664,7 @@ function providerSetupLink(provider = activeAiProvider()) {
   return OPENAI_SETUP_URL;
 }
 function aiProviderReady() {
+  if (assessmentMode() !== "advanced") return false;
   const p = activeAiProvider();
   if (p === "anthropic") return !!state.settings.anthropicKey;
   if (p === "gemini") return !!state.settings.geminiKey;
@@ -2199,6 +2200,7 @@ async function runOpenAiCopilot(action, control, responseText, context) {
 }
 
 async function testOpenAiConnection() {
+  if (assessmentMode() !== "advanced") throw new Error("AI connection testing is unavailable in Simple mode.");
   if (!aiProviderReady()) throw new Error("Provider credentials/settings are incomplete.");
   try {
     await Promise.race([
@@ -2694,7 +2696,7 @@ function renderWelcome() {
          ` : ""}
         <div class="question">
           <h3>Assessment Mode</h3>
-          <p class="hint">Simple mode is optimized for generalists. Advanced mode enables deeper, more granular specialist scoring and recommendations.</p>
+          <p class="hint"><strong>Select your assessment mode before you start.</strong> Simple mode is optimized for generalists, while Advanced mode supports deeper specialist scoring and richer analysis.</p>
           <label style="display:flex; align-items:center; gap:0.5rem;">
             <select id="assessmentModeSelect">
               <option value="simple" ${mode === "simple" ? "selected" : ""}>Simple (generalist)</option>
@@ -2702,19 +2704,18 @@ function renderWelcome() {
             </select>
           </label>
           <p class="hint">${mode === "advanced" ? "Advanced mode: 0.5-step scoring, richer evidence quality breakdown, and nuanced AI recommendations." : "Simple mode: quick 1-5 scoring with concise guidance."}</p>
-        </div>
-
-        <div class="question">
-          <h3>AI Mode</h3>
           ${mode === "advanced" ? `
-          <p class="hint">Enable optional generative AI support for interpretation and examples.</p>
+          <div style="margin-top:0.7rem; border-top:1px dashed var(--line); padding-top:0.7rem;">
+          <h3 style="margin:0 0 0.35rem;">AI Mode (Advanced only)</h3>
+          <p class="hint">Advanced mode lets you connect an AI service to provide deeper analysis, interpretation support, and stronger recommendation detail.</p>
           <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
             <input id="aiModeToggle" type="checkbox" ${aiMode ? "checked" : ""} />
             <span>${aiMode ? "AI mode enabled" : "AI mode disabled"}</span>
             ${aiMode ? `<button class="btn ghost small icon-btn" id="aiSettingsToggleBtn" title="Open AI settings" type="button">⚙</button>` : ""}
           </label>
           ${aiDisabledReason() ? `<p class="hint"><strong>AI unavailable:</strong> ${escapeHtml(aiDisabledReason())}</p>` : `<p class="hint"><strong>AI status:</strong> Ready (${escapeHtml(providerLabel())}).</p>`}
-          ` : `<p class="hint">AI features are hidden in Simple mode. Switch to Advanced mode to configure and use AI.</p>`}
+          </div>
+          ` : ""}
 
           <div id="aiSettingsPanel" style="display:${mode === "advanced" && showAiSettings ? "block" : "none"}; margin-top:0.8rem; border-top:1px dashed var(--line); padding-top:0.8rem;">
             <h3>AI Settings</h3>

@@ -53,6 +53,11 @@ class TestRoadmapAndReportRegression(unittest.TestCase):
         self.assertIn("const items = timeline.items.slice(0, maxRows);", src)
         self.assertIn("const fitText = (text, maxWidth) => {", src)
 
+    def test_simple_mode_blocks_ai_provider_use(self):
+        src = self.source
+        self.assertIn("if (assessmentMode() !== \"advanced\") return false;", src)
+        self.assertIn("AI connection testing is unavailable in Simple mode.", src)
+
 
 if __name__ == "__main__":
     unittest.main()
