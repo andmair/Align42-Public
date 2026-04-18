@@ -2437,7 +2437,7 @@ function renderWelcome() {
               ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
             </div>
           </div>
-        `}
+         ` : ""}
         <div class="question">
           <h3>Assessment Mode</h3>
           <p class="hint">Simple mode is optimized for generalists. Advanced mode enables deeper, more granular specialist scoring and recommendations.</p>
