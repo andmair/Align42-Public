@@ -1,2 +1,0 @@
-af80273113f7c470085f62c4329e9f8fa2cbfe1cba643034d9731ea349a74835  Align42-Installer-macOS.zip
-085bfd24d4b51b977cce2330b04500114e578989775442bfde7134ebbad3342a  Align42-Installer-Windows.zip
