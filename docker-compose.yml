@@ -1,0 +1,11 @@
+services:
+  align42:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: align42:local
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+    restart: unless-stopped

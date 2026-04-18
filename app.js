@@ -275,6 +275,12 @@ function load(key, fallback) {
   }
 }
 
+const LOGOUT_BACKUP_STORAGE = {
+  profile: `${STORAGE.profile}_logout_backup`,
+  settings: `${STORAGE.settings}_logout_backup`,
+  assessments: `${STORAGE.assessments}_logout_backup`
+};
+
 function storageSettingsSnapshot() {
   const snapshot = { ...(state.settings || {}) };
   const mode = snapshot.aiCredentialStorage === "persistent" ? "persistent" : "session";
@@ -304,7 +310,35 @@ function saveProfile() {
   localStorage.setItem(STORAGE.profile, JSON.stringify(state.profile));
 }
 
+function persistLogoutBackups() {
+  localStorage.setItem(LOGOUT_BACKUP_STORAGE.profile, JSON.stringify(load(STORAGE.profile, null)));
+  localStorage.setItem(LOGOUT_BACKUP_STORAGE.settings, JSON.stringify(load(STORAGE.settings, {})));
+  localStorage.setItem(LOGOUT_BACKUP_STORAGE.assessments, JSON.stringify(load(STORAGE.assessments, [])));
+}
+
+function clearActiveStorageForLogout() {
+  localStorage.removeItem(STORAGE.profile);
+  localStorage.removeItem(STORAGE.settings);
+  localStorage.removeItem(STORAGE.assessments);
+  try { sessionStorage.clear(); } catch {}
+}
+
+function restoreAfterLogout() {
+  const profile = load(LOGOUT_BACKUP_STORAGE.profile, null);
+  const settings = load(LOGOUT_BACKUP_STORAGE.settings, null);
+  const assessments = load(LOGOUT_BACKUP_STORAGE.assessments, null);
+  if (profile) localStorage.setItem(STORAGE.profile, JSON.stringify(profile));
+  if (settings) localStorage.setItem(STORAGE.settings, JSON.stringify(settings));
+  if (assessments) localStorage.setItem(STORAGE.assessments, JSON.stringify(assessments));
+  localStorage.removeItem(LOGOUT_BACKUP_STORAGE.profile);
+  localStorage.removeItem(LOGOUT_BACKUP_STORAGE.settings);
+  localStorage.removeItem(LOGOUT_BACKUP_STORAGE.assessments);
+  return { profile, settings, assessments };
+}
+
 function clearVisibleSessionState() {
+  persistLogoutBackups();
+  clearActiveStorageForLogout();
   state.profile = null;
   state.assessments = [];
   state.currentAssessmentId = null;
@@ -2532,8 +2566,9 @@ function renderWelcome() {
     const role = document.getElementById("profileRole").value.trim();
     if (!name || !email) return toast("Name and email are required.");
     if (state.ui.loggedOut) {
-      state.assessments = load(STORAGE.assessments, []);
-      state.settings = { ...state.settings, ...load(STORAGE.settings, {}) };
+      const restored = restoreAfterLogout();
+      state.assessments = restored.assessments || [];
+      state.settings = { ...state.settings, ...(restored.settings || {}) };
       state.ui.loggedOut = false;
     }
     state.profile = { name, email, role };

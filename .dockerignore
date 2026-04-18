@@ -1,0 +1,15 @@
+.git
+.gitignore
+.DS_Store
+__pycache__/
+*.pyc
+dist/
+tools/
+tests/
+tests.html
+tests.js
+iso42001.db
+uploads/
+.env
+.env.*
+*.log
