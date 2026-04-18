@@ -80,31 +80,26 @@ Installed hooks:
 - Used for:
   - delegation requests
 
-## Build installers
+## Deprecated distributions
 
-Build current supported installers (macOS zip and Windows zip):
+The Windows/macOS installer packages and the clean folder distribution are retained in the repository for future use, but are currently deprecated and should not be rebuilt unless explicitly re-enabled.
+
+If you need to rebuild the legacy installer packages:
 
 ```bash
-./scripts/build_single_file_installers.sh
+ALLOW_DEPRECATED_DISTRIBUTIONS=1 ./scripts/build_single_file_installers.sh
 ```
 
-The ZIP installers are intentionally packaged as static, non-executable web assets to reduce OS security/quarantine prompts when downloaded from GitHub.
-
-Build a clean folder-based distribution (for copying directly to another device):
+If you need to rebuild the legacy folder distribution:
 
 ```bash
-./scripts/build_folder_distribution.sh
+ALLOW_DEPRECATED_DISTRIBUTIONS=1 ./scripts/build_folder_distribution.sh
 ```
 
-Output:
-
-- `dist/files/Align42`
-
-Windows `.exe` installer is deprecated for now and is not rebuilt by default.
-To build it explicitly in future:
+Windows `.exe` installer remains separately deprecated inside the legacy installer build flow. To build it explicitly when legacy installers are re-enabled:
 
 ```bash
-BUILD_WINDOWS_EXE=1 ./scripts/build_single_file_installers.sh
+ALLOW_DEPRECATED_DISTRIBUTIONS=1 BUILD_WINDOWS_EXE=1 ./scripts/build_single_file_installers.sh
 ```
 
 ## Notes

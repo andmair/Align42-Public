@@ -10,6 +10,18 @@ SEVENZIP_BIN="$SEVENZIP_DIR/mac/7zz"
 SEVENZIP_WIN_PACKAGE="$SEVENZIP_DIR/7zip-win-x64.exe"
 SEVENZIP_WIN_SFX="$SEVENZIP_DIR/win/7z.sfx"
 BUILD_WINDOWS_EXE="${BUILD_WINDOWS_EXE:-0}"
+ALLOW_DEPRECATED_DISTRIBUTIONS="${ALLOW_DEPRECATED_DISTRIBUTIONS:-0}"
+
+if [[ "$ALLOW_DEPRECATED_DISTRIBUTIONS" != "1" ]]; then
+  cat >&2 <<'EOF'
+Installer distribution builds are currently deprecated and retained only for future use.
+No installer artifacts were rebuilt.
+
+If you explicitly need to rebuild them again, rerun with:
+  ALLOW_DEPRECATED_DISTRIBUTIONS=1 ./scripts/build_single_file_installers.sh
+EOF
+  exit 0
+fi
 
 ensure_7zip_tools() {
   if [[ ! -x "$SEVENZIP_BIN" ]]; then

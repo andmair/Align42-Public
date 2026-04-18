@@ -4,6 +4,18 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_ROOT="$ROOT_DIR/dist/files"
 DIST_DIR="$DIST_ROOT/Align42"
+ALLOW_DEPRECATED_DISTRIBUTIONS="${ALLOW_DEPRECATED_DISTRIBUTIONS:-0}"
+
+if [[ "$ALLOW_DEPRECATED_DISTRIBUTIONS" != "1" ]]; then
+  cat >&2 <<'EOF'
+Folder-based distribution builds are currently deprecated and retained only for future use.
+No distribution files were rebuilt.
+
+If you explicitly need to rebuild them again, rerun with:
+  ALLOW_DEPRECATED_DISTRIBUTIONS=1 ./scripts/build_folder_distribution.sh
+EOF
+  exit 0
+fi
 
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"

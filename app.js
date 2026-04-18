@@ -231,7 +231,8 @@ const sections = [
       { id: "c10_continuous", clause: "Clause 10.2", weight: 4, control: "Continuous improvement program", prompt: "Is there a structured AI governance improvement roadmap linked to strategic goals?", bestPractice: "Improvement priorities are risk-driven, resourced, and tracked.", example: "12-month AI control maturity program with milestones, budget owner, and target outcomes.", starter: "Describe current AI governance improvement initiatives and milestones." }
     ]
   },
-  { id: "final", title: "Final Outputs", description: "Dashboard, detailed report, and compliance-readiness roadmap.", type: "final" }
+  { id: "final", title: "Final Outputs", description: "Download assessment report files and summary outputs.", type: "final" },
+  { id: "roadmap", title: "Roadmap", description: "Review implementation sequencing and export roadmap deliverables.", type: "roadmap" }
 ];
 
 const app = document.getElementById("app");
@@ -257,7 +258,7 @@ let state = {
   assessments: load(STORAGE.assessments, []),
   currentAssessmentId: null,
   view: "assessment",
-  ui: { uploadOpen: {}, summaryOpen: {} }
+  ui: { uploadOpen: {}, summaryOpen: {}, profileEditorOpen: false, loggedOut: false }
 };
 
 let dictationState = {
@@ -290,7 +291,40 @@ function storageSettingsSnapshot() {
   return snapshot;
 }
 
-function saveProfile() { localStorage.setItem(STORAGE.profile, JSON.stringify(state.profile)); }
+function normalizedProfile(profile) {
+  return {
+    name: `${profile?.name || ""}`.trim(),
+    email: `${profile?.email || ""}`.trim(),
+    role: `${profile?.role || ""}`.trim()
+  };
+}
+
+function saveProfile() {
+  state.profile = normalizedProfile(state.profile);
+  localStorage.setItem(STORAGE.profile, JSON.stringify(state.profile));
+}
+
+function clearVisibleSessionState() {
+  state.profile = null;
+  state.assessments = [];
+  state.currentAssessmentId = null;
+  state.view = "assessment";
+  state.settings = {
+    ...state.settings,
+    aiMode: false,
+    settingsOpen: false,
+    openaiKey: "",
+    anthropicKey: "",
+    geminiKey: "",
+    azureApiKey: "",
+    azureEndpoint: "",
+    azureDeployment: ""
+  };
+  state.ui.uploadOpen = {};
+  state.ui.summaryOpen = {};
+  state.ui.profileEditorOpen = true;
+  state.ui.loggedOut = true;
+}
 function saveSettings() { localStorage.setItem(STORAGE.settings, JSON.stringify(storageSettingsSnapshot())); }
 function assessmentMode() { return state.settings?.assessmentMode === "advanced" ? "advanced" : "simple"; }
 function aiFeaturesEnabled() { return assessmentMode() === "advanced" && !!state.settings?.aiMode; }
@@ -2313,16 +2347,16 @@ function renderWelcome() {
   const mode = assessmentMode();
   const aiMode = aiFeaturesEnabled();
   const hasProfile = !!(state.profile && state.profile.name && state.profile.email);
+  const showProfileEditor = !hasProfile || !!state.ui.profileEditorOpen;
   const showAiSettings = mode === "advanced" && !!state.settings.settingsOpen;
   const provider = activeAiProvider();
   const setupLink = providerSetupLink(provider);
   const preflight = providerPreflightValidation(provider);
   const diagnostics = (state.settings.aiDiagnostics || []).slice().reverse().slice(0, 25);
-  const rows = state.assessments
+  const rows = (state.ui.loggedOut ? [] : state.assessments)
     .slice()
     .filter((a) => !isDemoAssessment(a))
     .sort((a, b) => (b.updatedAt || "").localeCompare(a.updatedAt || ""));
-  const avgScore = rows.length ? Math.round(rows.reduce((sum, a) => sum + weightedScorePercent(a), 0) / rows.length) : 0;
   const completedCount = rows.filter((a) => completionPercent(a) >= 100).length;
   const inProgressCount = Math.max(0, rows.length - completedCount);
   app.innerHTML = `
@@ -2331,12 +2365,13 @@ function renderWelcome() {
         <div class="brand">
           <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><span class="meta-pill">${mode === "advanced" ? "Advanced mode" : "Simple mode"}</span>${mode === "advanced" ? `<span class="meta-pill ${aiMode ? "ok-pill" : ""}">${aiMode ? "AI on" : "AI off"}</span>` : ""}</div>
           <p>${escapeHtml(state.profile?.name || "Profile not set")} (${escapeHtml(state.profile?.email || "email not set")})</p>
+          ${state.profile?.role ? `<p class="hint" style="margin-top:0.2rem;">Role: ${escapeHtml(state.profile.role)}</p>` : ""}
         </div>
         <div class="actions">
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
           ${mode === "simple" ? `<button class="btn secondary" id="demoAssessmentBtn">🧪 Demo Assessment</button>` : ""}
-          <button class="btn ghost" id="editProfileBtn">👤 Edit Profile</button>
+          <button class="btn ghost" id="editProfileBtn">👤 ${showProfileEditor ? "Hide Profile" : "Edit Profile"}</button>
         </div>
       </header>
 
@@ -2345,16 +2380,28 @@ function renderWelcome() {
           <div class="metric-card"><div class="metric-label">Saved assessments</div><div class="metric-value">${rows.length}</div></div>
           <div class="metric-card"><div class="metric-label">In progress</div><div class="metric-value">${inProgressCount}</div></div>
           <div class="metric-card"><div class="metric-label">Completed</div><div class="metric-value">${completedCount}</div></div>
-          <div class="metric-card"><div class="metric-label">Average score</div><div class="metric-value">${avgScore}%</div></div>
         </div>
         <div class="setup-grid">
-        ${hasProfile ? "" : `
+        ${state.ui.loggedOut ? `
+          <div class="question question-focus">
+            <h3>Logged Out</h3>
+            <p class="hint">Your details and saved assessments have been cleared from the current UI and in-memory cache. Local saved data is still retained on this device in the background.</p>
+          </div>
+        ` : ""}
+        ${showProfileEditor ? `
           <div class="question">
-            <h3>Set Up Your Profile</h3>
-            <p class="hint">Enter your name and email to start or open assessments.</p>
-            <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" /></label>
-            <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" /></label>
-            <button class="btn primary" id="saveProfileBtn">Save Profile</button>
+            <h3>${hasProfile ? "Edit Profile" : "Set Up Your Profile"}</h3>
+            <p class="hint">Enter your details to start or open assessments. All profile fields are shown here together.</p>
+            <div class="row">
+              <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" value="${escapeHtml(state.profile?.name || "")}" /></label>
+              <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" value="${escapeHtml(state.profile?.email || "")}" /></label>
+            </div>
+            <label style="margin-top:0.6rem;">Role<input id="profileRole" type="text" placeholder="Example: Risk Manager" value="${escapeHtml(state.profile?.role || "")}" /></label>
+            <div class="actions" style="margin-top:0.7rem;">
+              <button class="btn primary" id="saveProfileBtn">Save Profile</button>
+              ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close</button>` : ""}
+              ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
+            </div>
           </div>
         `}
         <div class="question">
@@ -2482,8 +2529,15 @@ function renderWelcome() {
   document.getElementById("saveProfileBtn")?.addEventListener("click", () => {
     const name = document.getElementById("profileName").value.trim();
     const email = document.getElementById("profileEmail").value.trim();
+    const role = document.getElementById("profileRole").value.trim();
     if (!name || !email) return toast("Name and email are required.");
-    state.profile = { name, email };
+    if (state.ui.loggedOut) {
+      state.assessments = load(STORAGE.assessments, []);
+      state.settings = { ...state.settings, ...load(STORAGE.settings, {}) };
+      state.ui.loggedOut = false;
+    }
+    state.profile = { name, email, role };
+    state.ui.profileEditorOpen = false;
     saveProfile();
     render();
   });
@@ -2517,13 +2571,17 @@ function renderWelcome() {
   });
 
   document.getElementById("editProfileBtn").addEventListener("click", () => {
-    const name = prompt("Name", state.profile?.name || "");
-    if (name === null) return;
-    const email = prompt("Email", state.profile?.email || "");
-    if (email === null) return;
-    state.profile = { name: name.trim(), email: email.trim() };
-    saveProfile();
+    state.ui.profileEditorOpen = !state.ui.profileEditorOpen;
     render();
+  });
+  document.getElementById("cancelProfileBtn")?.addEventListener("click", () => {
+    state.ui.profileEditorOpen = false;
+    render();
+  });
+  document.getElementById("logoutBtn")?.addEventListener("click", () => {
+    clearVisibleSessionState();
+    render();
+    toast("Logged out. Local saved data has been hidden from this session.");
   });
 
   document.getElementById("aiModeToggle")?.addEventListener("change", (e) => {
@@ -2786,7 +2844,8 @@ function renderAssessment(assessment) {
 
   if (section.type === "context") renderContext(assessment, section);
   else if (section.type === "controls") renderControls(assessment, section);
-  else renderFinal(assessment);
+  else if (section.type === "final") renderFinal(assessment);
+  else renderRoadmap(assessment);
 }
 
 function renderContext(assessment, section) {
@@ -2925,18 +2984,10 @@ function renderContext(assessment, section) {
       return `<div class="question question-lite"><h3>${escapeHtml(headingCase(f.label))}${f.required ? " *" : ""}</h3><input type="${f.type}" data-field="${f.key}" value="${escapeHtml(val)}" placeholder="${escapeHtml(f.starter || "Provide response")}" /></div>`;
     }).join("")}
     <div class="question question-insight">
-      <h3>🧠 Section Improvement Loop</h3>
-      <p class="hint">Generate targeted improvement guidance for this section.</p>
-      <button class="btn secondary small" type="button" id="genSectionInsightsBtn">${aiReady ? "Generate with AI" : "Generate Insights"}</button>
-      ${sectionInsightView ? `
-        <p class="hint"><strong>Generated:</strong> ${escapeHtml(new Date(sectionInsightView.updatedAt).toLocaleString())} (${escapeHtml(sectionInsightView.source || "heuristic")})</p>
-        <p class="hint"><strong>Top 3 weaknesses</strong></p>
-        <ul class="evidence-list">${(sectionInsightView.topWeaknesses || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
-        <p class="hint"><strong>Quick wins</strong></p>
-        <ul class="evidence-list">${(sectionInsightView.quickWins || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
-        <p class="hint"><strong>Questions to ask stakeholders next</strong></p>
-        <ul class="evidence-list">${(sectionInsightView.nextQuestions || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
-      ` : `<p class="hint">No section guidance generated yet.</p>`}
+      <h3>Feedback</h3>
+      <p class="hint"><strong>Focus area:</strong> ${escapeHtml(practicalSectionFeedback(sectionInsightView).focus)}.</p>
+      <p class="hint"><strong>Suggested action:</strong> ${escapeHtml(practicalSectionFeedback(sectionInsightView).nextStep)}</p>
+      ${(practicalSectionFeedback(sectionInsightView).questions || []).length ? `<p class="hint"><strong>Questions for stakeholders:</strong></p><ul class="evidence-list">${practicalSectionFeedback(sectionInsightView).questions.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ul>` : ""}
     </div>
     ${renderNav(assessment)}
   `;
@@ -3039,17 +3090,6 @@ function renderContext(assessment, section) {
     assessment.updatedAt = nowIso();
     saveAssessments();
     renderContext(assessment, section);
-  });
-  document.getElementById("genSectionInsightsBtn")?.addEventListener("click", async () => {
-    const btn = document.getElementById("genSectionInsightsBtn");
-    btn.disabled = true;
-    btn.textContent = "Generating...";
-    const insights = await generateSectionInsights(assessment, section);
-    assessment.data.sectionInsights[section.id] = insights;
-    assessment.updatedAt = nowIso();
-    saveAssessments();
-    renderContext(assessment, section);
-    toast(`Section insights generated (${insights.source}).`);
   });
 
   root.querySelectorAll("[data-context-upload]").forEach((el) => {
@@ -3186,6 +3226,26 @@ function delegationQuestions(control, assessment = null, role = "CONTRIBUTOR") {
     }
   }
   return list;
+}
+
+function shortSectionSuggestion(sectionInsightView) {
+  if (sectionInsightView?.quickWins?.length) return sectionInsightView.quickWins[0];
+  if (sectionInsightView?.topWeaknesses?.length) return `Focus first on ${sectionInsightView.topWeaknesses[0].replace(/\.$/, "")}.`;
+  if (sectionInsightView?.nextQuestions?.length) return sectionInsightView.nextQuestions[0];
+  return "Complete the highest-risk responses first, then add supporting evidence for any partial or weak controls.";
+}
+
+function practicalSectionFeedback(sectionInsightView) {
+  const focus = sectionInsightView?.topWeaknesses?.[0]
+    ? sectionInsightView.topWeaknesses[0].replace(/\.$/, "")
+    : "the weakest controls with the largest compliance gap";
+  const nextStep = sectionInsightView?.quickWins?.[0]
+    || "Add concise evidence and clear ownership for any control scored below target.";
+  const questions = (sectionInsightView?.nextQuestions || [])
+    .map((q) => `${q || ""}`.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  return { focus, nextStep, questions };
 }
 
 function renderControls(assessment, section) {
@@ -3378,23 +3438,15 @@ function renderControls(assessment, section) {
       const status = complianceStatus(score);
       const tone = statusToneFromScore(score);
       const key = `${section.id}:${c.id}`;
-      const open = !!state.ui.summaryOpen[key];
-      return `<div class="summary-card ${open ? "open" : ""}"><div class="summary-header" data-summary="${key}"><strong>${escapeHtml(c.control)}</strong><span class="tag ${tone}">${status}</span></div><div class="summary-body"><p><strong>Score:</strong> ${score || "Not scored"}/5</p><p><strong>Best practice:</strong> ${escapeHtml(c.bestPractice)}</p><p><strong>Current response:</strong> ${escapeHtml(ensureEvidence(assessment, c.id).notes || "No response")}</p></div></div>`;
+      const open = state.ui.summaryOpen[key] !== false;
+      return `<div class="summary-card ${open ? "open" : ""}"><div class="summary-header" data-summary="${key}" role="button" tabindex="0" aria-expanded="${open ? "true" : "false"}"><div class="summary-title-wrap"><strong>${escapeHtml(c.control)}</strong><span class="summary-cue">${open ? "Hide details" : "Show details"}</span></div><div class="summary-header-actions"><span class="tag ${tone}">${status}</span><span class="summary-chevron" aria-hidden="true">${open ? "▾" : "▸"}</span></div></div><div class="summary-body"><p><strong>Score:</strong> ${score || "Not scored"}/5</p><p><strong>Best practice:</strong> ${escapeHtml(c.bestPractice)}</p><p><strong>Current response:</strong> ${escapeHtml(ensureEvidence(assessment, c.id).notes || "No response")}</p></div></div>`;
     }).join("")}
 
     <div class="question question-insight">
-      <h3>🧠 Section Improvement Loop</h3>
-      <p class="hint">Generate targeted improvement guidance for this section.</p>
-      <button class="btn secondary small" type="button" id="genSectionInsightsBtn">${aiFeaturesEnabled() && aiProviderReady() ? "Generate with AI" : "Generate Insights"}</button>
-      ${sectionInsightView ? `
-        <p class="hint"><strong>Generated:</strong> ${escapeHtml(new Date(sectionInsightView.updatedAt).toLocaleString())} (${escapeHtml(sectionInsightView.source || "heuristic")})</p>
-        <p class="hint"><strong>Top 3 weaknesses</strong></p>
-        <ul class="evidence-list">${(sectionInsightView.topWeaknesses || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
-        <p class="hint"><strong>Quick wins</strong></p>
-        <ul class="evidence-list">${(sectionInsightView.quickWins || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
-        <p class="hint"><strong>Questions to ask stakeholders next</strong></p>
-        <ul class="evidence-list">${(sectionInsightView.nextQuestions || []).map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>
-      ` : `<p class="hint">No section guidance generated yet.</p>`}
+      <h3>Feedback</h3>
+      <p class="hint"><strong>Focus area:</strong> ${escapeHtml(practicalSectionFeedback(sectionInsightView).focus)}.</p>
+      <p class="hint"><strong>Suggested action:</strong> ${escapeHtml(practicalSectionFeedback(sectionInsightView).nextStep)}</p>
+      ${(practicalSectionFeedback(sectionInsightView).questions || []).length ? `<p class="hint"><strong>Questions for stakeholders:</strong></p><ul class="evidence-list">${practicalSectionFeedback(sectionInsightView).questions.map((q) => `<li>${escapeHtml(q)}</li>`).join("")}</ul>` : ""}
     </div>
 
     ${renderNav(assessment)}
@@ -3537,10 +3589,16 @@ function renderControls(assessment, section) {
   });
 
   root.querySelectorAll("[data-summary]").forEach((el) => {
-    el.addEventListener("click", (e) => {
-      const key = e.currentTarget.dataset.summary;
+    const toggleSummary = (target) => {
+      const key = target.dataset.summary;
       state.ui.summaryOpen[key] = !state.ui.summaryOpen[key];
       renderAssessment(assessment);
+    };
+    el.addEventListener("click", (e) => toggleSummary(e.currentTarget));
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      toggleSummary(e.currentTarget);
     });
   });
 
@@ -3675,18 +3733,6 @@ function renderControls(assessment, section) {
       renderAssessment(assessment);
       toast(applied.analyzedCount ? `Delegate responses applied. AI analyzed ${applied.analyzedCount} response(s).` : `Delegate responses applied (${applied.appliedCount} response(s)).`);
     });
-  });
-
-  document.getElementById("genSectionInsightsBtn")?.addEventListener("click", async () => {
-    const btn = document.getElementById("genSectionInsightsBtn");
-    btn.disabled = true;
-    btn.textContent = "Generating...";
-    const insights = await generateSectionInsights(assessment, section);
-    assessment.data.sectionInsights[section.id] = insights;
-    assessment.updatedAt = nowIso();
-    saveAssessments();
-    renderAssessment(assessment);
-    toast(`Section insights generated (${insights.source}).`);
   });
 
   bindNav(assessment);
@@ -4787,10 +4833,10 @@ function renderFinal(assessment) {
         </div>
   `);
 
-  const boardBriefHtml = () => documentShell("Board Brief", `
+  const boardBriefHtml = () => documentShell("Executive Summary", `
         <div style="max-width:1100px; margin:0 auto; background:#fff; min-height:100vh;">
           <div class="cover" style="min-height:unset;">
-            <h1 style="margin:0 0 8px;">Align42 Board Brief</h1>
+            <h1 style="margin:0 0 8px;">Align42 Executive Summary</h1>
             <p style="margin:0 0 4px;"><strong>ISO 42001 Readiness Snapshot</strong></p>
             <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
@@ -4888,82 +4934,119 @@ function renderFinal(assessment) {
   `);
 
   root.innerHTML = `
-    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Final Outputs</h2><p class="section-desc">Generate artifacts and finalize readiness actions.</p></div></div>
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Final Outputs</h2><p class="section-desc">Download the assessment report package. Roadmap planning and roadmap exports are on the next screen.</p></div></div>
 
     <div class="report-grid">
       <div class="tile"><h3>Overall Weighted Score</h3><p><strong>${score}%</strong></p></div>
-      <div class="tile"><h3>Compliant Controls</h3><p><strong>${compliant}</strong> of ${total}</p></div>
-      <div class="tile"><h3>Non-Compliant Controls</h3><p><strong>${nonCompliant}</strong> of ${total}</p></div>
-      <div class="tile"><h3>Control Coverage</h3><p><strong>${coveragePercent}%</strong></p></div>
-      <div class="tile"><h3>Roadmap Horizon</h3><p><strong>${escapeHtml(horizonSummary)}</strong></p></div>
-      <div class="tile"><h3>Target Horizon Input</h3><p><strong>${escapeHtml(timeline.horizonTargetText)}</strong></p></div>
-      <div class="tile"><h3>Constraint Mode</h3><p><strong>${escapeHtml(timeline.scenarioLabel)}</strong></p></div>
       <div class="tile"><h3>Readiness Band</h3><p><strong>${escapeHtml(readinessBand)}</strong></p></div>
+      <div class="tile"><h3>Compliant Controls</h3><p><strong>${compliant}</strong> of ${total}</p></div>
     </div>
 
     <div class="question question-focus">
-      <h3>Communication Style</h3>
-      <p class="hint"><strong>Fixed mode:</strong> ${escapeHtml(audienceLabel)}</p>
-      <p class="hint">All outputs use a compliance-focused tone aligned to ISO 42001 readiness.</p>
-    </div>
-    ${isAdvancedMode ? `
-    <h3>🕸 ISO 42001 Maturity Radar</h3>
-    <div class="question radar-wrap">
-      <p class="hint">Average maturity by ISO 42001 dimension. Green zone indicates the target threshold for compliance readiness (around 4.0/5).</p>
-      <canvas id="maturityRadarCanvas"></canvas>
-    </div>` : ""}
-
-    <h3>🧭 Executive Summary</h3>
-    <div class="question summary-focus">
-      <p class="hint"><strong>Readiness narrative:</strong> ${score >= 80 ? "High confidence baseline with targeted remediation needed to close remaining gaps." : score >= 60 ? "Moderate baseline; coordinated uplift and clearer evidence are needed before readiness sign-off." : "Foundational uplift required across governance, risk, and operational controls before readiness can be demonstrated."}</p>
-      <p class="hint"><strong>Timeline basis:</strong> Plan is sequenced from <strong>${escapeHtml(formatDateShort(timeline.horizonStart))}</strong> to <strong>${escapeHtml(formatDateShort(timeline.horizonEnd))}</strong>, aligned to your target horizon input of <strong>${escapeHtml(timeline.horizonTargetText)}</strong> and scenario constraints (<strong>${escapeHtml(timeline.scenarioLabel)}</strong>).</p>
-      <p class="hint"><strong>Top strengths:</strong></p>
-      <ul class="evidence-list">${strengths.length ? strengths.map((r) => `<li>${escapeHtml(r.control)} (${escapeHtml(r.clause)}) - score ${r.score}/5</li>`).join("") : "<li>No high-confidence strengths identified yet.</li>"}</ul>
-      <p class="hint"><strong>Most urgent actions:</strong></p>
-      <ul class="evidence-list">${urgent.length ? urgent.map((r) => `<li>${escapeHtml(r.control)} - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)} (${escapeHtml(r.timeframe)})</li>`).join("") : "<li>No urgent actions generated yet.</li>"}</ul>
+      <h3>Assessment Summary</h3>
+      <p class="hint"><strong>Readiness narrative:</strong> ${escapeHtml(readinessText)}</p>
+      ${criticalFindings.length
+        ? `<p class="hint"><strong>Priority findings:</strong> ${escapeHtml(criticalFindings.slice(0, 2).map((f) => f.message).join(" "))}</p>`
+        : `<p class="hint"><strong>Priority findings:</strong> No critical contradictions were detected from current responses.</p>`}
+      <p class="hint"><strong>Report style:</strong> Compliance-focused and suitable for non-technical stakeholders.</p>
     </div>
 
-    <h3>⚠ Cross-Control Analysis Findings</h3>
-    <div class="question ${findings.length ? "question-alert" : ""}">
-      ${findings.length ? `<ul class="evidence-list">${findings.map((f) => `<li><span class="tag ${f.severity === "High" ? "no" : "ok"}">${escapeHtml(f.severity)}</span> <strong>${escapeHtml(f.type)}</strong>${f.controlId ? ` (${escapeHtml(getControl(f.controlId)?.control || f.controlId)})` : ""}: ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No contradictions or dependency gaps detected from current responses.</p>"}
-    </div>
-
-    <h3>1) 📊 Summary Dashboard</h3>
+    <h3>📄 Assessment Report</h3>
     <div class="actions">
-      <button class="btn secondary" id="downloadDeckBtn">Download summary deck (.ppt)</button>
-      <button class="btn secondary" id="downloadBoardBriefBtn">Download board brief (.doc)</button>
-    </div>
-
-    <h3>2) 📄 Detailed Assessment Report</h3>
-    <div class="actions">
-      <button class="btn secondary" id="downloadPdfBtn">Download PDF</button>
-      <button class="btn secondary" id="downloadDocBtn">Download Word (.doc)</button>
-      <button class="btn secondary" id="downloadCsvBtn">Download CSV</button>
+      <button class="btn secondary" id="downloadExecutiveSummaryBtn">Executive Summary (.doc)</button>
+      <button class="btn secondary" id="downloadFullReportBtn">Full Report (.doc)</button>
+      <button class="btn secondary" id="downloadControlsCsvBtn">Controls List (.csv)</button>
     </div>
     ${isDemoMode ? `<div class="question question-focus">
       <h3>Demo Sample Deliverables</h3>
-      <p class="hint">Use these sample outputs to illustrate report and roadmap structure before tailoring a live assessment deliverable.</p>
+      <p class="hint">Use these sample files to preview the structure before tailoring a live assessment output.</p>
       <div class="actions">
-        <button class="btn secondary" id="downloadDemoReportBtn">Download Sample Report (.doc)</button>
-        <button class="btn secondary" id="downloadDemoRoadmapBtn">Download Sample Roadmap (.ppt)</button>
+        <button class="btn secondary" id="downloadDemoExecutiveSummaryBtn">Sample Executive Summary (.doc)</button>
+        <button class="btn secondary" id="downloadDemoReportBtn">Sample Full Report (.doc)</button>
       </div>
     </div>` : ""}
 
-    <h3>3) 🗺 Roadmap Timeline</h3>
+    ${renderNav(assessment)}
+  `;
+
+  document.getElementById("downloadExecutiveSummaryBtn").addEventListener("click", () => {
+    download("align42-executive-summary.doc", "application/msword", boardBriefHtml());
+  });
+
+  document.getElementById("downloadControlsCsvBtn").addEventListener("click", () => {
+    const header = ["Section", "Clause", "Control", "Weight", "Score", "Status", "Priority", "Owner", "Start Date", "Finish Date", "Duration Weeks", "Action Window", "Business Impact if Delayed", "Recommended Action", "Expected Evidence", "Notes", "Links", "Files", "Findings"];
+    const csv = [header.map(csvEscape).join(",")].concat(rows.map((r) => {
+      const controlFindings = findings.filter((f) => f.controlId && f.controlId === r.id).map((f) => `[${f.severity}] ${f.type}: ${f.message}`).join(" | ");
+      const tr = timelineById[r.id] || null;
+      const expected = conciseActionText((getControl(r.id)?.bestPractice || "").replace(/^([a-z])/i, (m) => m.toUpperCase()));
+      return [r.section, r.clause, r.control, r.weight, r.score, r.status, tr?.priority || "", tr?.owner || "", tr?.startLabel || "", tr?.endLabel || "", tr?.durationWeeks || "", tr ? actionWindowLabel(tr.endWeekScaled || 0) : "", tr ? businessImpactFromPriority(tr.priority) : "", tr ? conciseActionText(tr.method) : "", expected, r.notes, r.links.join(" | "), r.files.join(" | "), controlFindings].map(csvEscape).join(",");
+    })).join("\n");
+    download("align42-controls-list.csv", "text/csv", csv);
+  });
+
+  document.getElementById("downloadFullReportBtn").addEventListener("click", () => {
+    download("align42-assessment-report.doc", "application/msword", reportHtml());
+  });
+  document.getElementById("downloadDemoExecutiveSummaryBtn")?.addEventListener("click", () => {
+    download("align42-demo-executive-summary.doc", "application/msword", boardBriefHtml());
+  });
+  document.getElementById("downloadDemoReportBtn")?.addEventListener("click", () => {
+    download("align42-demo-sample-report.doc", "application/msword", demoSampleReportHtml());
+  });
+  bindNav(assessment);
+}
+
+function renderRoadmap(assessment) {
+  const root = document.getElementById("wizardSection");
+  const rows = roadmapRows(assessment);
+  const findings = detectAnalysisFindings(assessment);
+  const timeline = roadmapTimeline(assessment, rows);
+  const actionPlan = buildExecutiveActionPlan(assessment, timeline, findings, 9);
+  const preparedFor = state.profile?.name || "User";
+  const isDemoMode = isDemoAssessment(assessment);
+  const horizonSummary = `${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)} (${timeline.planningWeeks} weeks)`;
+  const constraintNarrative = `${timeline.constraintNotes}${timeline.compressed ? " Timeline has been compressed to fit the selected horizon." : ""}`;
+  const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
+  const timelineRows = timeline.items.slice(0, 16);
+  const roadmapDataUrl = buildRoadmapCanvas(assessment).toDataURL("image/png");
+  const demoSampleRoadmapHtml = () => `
+    <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px;">
+      <h1>Align42 Demo Sample Roadmap</h1>
+      <p><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
+      <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
+      <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+        <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Phase</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Window</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Focus</th></tr>
+        <tr><td style="border:1px solid #d6e5dd; padding:8px;">Phase 1 - Foundation</td><td style="border:1px solid #d6e5dd; padding:8px;">Weeks 1-8</td><td style="border:1px solid #d6e5dd; padding:8px;">Scope, policy framework, governance forum, role accountability</td></tr>
+        <tr><td style="border:1px solid #d6e5dd; padding:8px;">Phase 2 - Risk and Operations</td><td style="border:1px solid #d6e5dd; padding:8px;">Weeks 9-20</td><td style="border:1px solid #d6e5dd; padding:8px;">Risk method, risk register, model validation, data lineage, oversight controls</td></tr>
+        <tr><td style="border:1px solid #d6e5dd; padding:8px;">Phase 3 - Assurance and Improvement</td><td style="border:1px solid #d6e5dd; padding:8px;">Weeks 21+</td><td style="border:1px solid #d6e5dd; padding:8px;">Monitoring, reporting, internal audit, corrective actions, continual improvement</td></tr>
+      </table>
+    </body></html>
+  `;
+
+  root.innerHTML = `
+    <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Roadmap</h2><p class="section-desc">Review sequencing, choose your preferred implementation path, and export the roadmap.</p></div></div>
+
     <div class="question question-focus">
-      <h3>Select implementation approach</h3>
+      <h3>Roadmap Settings</h3>
       <select id="approachSelect">
         <option value="fastest" ${assessment.data.preferredApproach === "fastest" ? "selected" : ""}>A) Fastest implementation</option>
         <option value="optimal" ${assessment.data.preferredApproach === "optimal" ? "selected" : ""}>B) Optimal implementation</option>
       </select>
-      <h3 style="margin-top:0.75rem;">Select roadmap scenario</h3>
+      <h3 style="margin-top:0.75rem;">Scenario</h3>
       <select id="scenarioSelect">
         <option value="standard" ${assessment.data.roadmapScenario === "standard" ? "selected" : ""}>Standard scenario</option>
         <option value="budget" ${assessment.data.roadmapScenario === "budget" ? "selected" : ""}>Budget constrained</option>
         <option value="regulator_6m" ${assessment.data.roadmapScenario === "regulator_6m" ? "selected" : ""}>Regulator review in &lt; 6 months</option>
       </select>
       <button class="btn primary small" id="refreshRoadmapBtn" style="margin-top:0.6rem;">Refresh Roadmap</button>
-      <p class="hint" style="margin-top:0.5rem;"><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+      <p class="hint" style="margin-top:0.5rem;"><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
+      <p class="hint"><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
+    </div>
+
+    <div class="report-grid">
+      <div class="tile"><h3>Preferred Approach</h3><p><strong>${escapeHtml(approachLabel)}</strong></p></div>
+      <div class="tile"><h3>Scenario</h3><p><strong>${escapeHtml(timeline.scenarioLabel)}</strong></p></div>
+      <div class="tile"><h3>Priority Actions</h3><p><strong>${timeline.items.filter((r) => r.priority === "High").length}</strong></p></div>
     </div>
 
     <div class="timeline-axis">
@@ -4981,10 +5064,14 @@ function renderFinal(assessment) {
           <p class="timeline-meta-row"><span><strong>Owner:</strong> ${escapeHtml(r.owner)}</span><span><strong>Timeline:</strong> ${escapeHtml(r.startLabel)} -> ${escapeHtml(r.endLabel)} (${escapeHtml(r.timeframe)})</span></p>
           <div class="timeline-bar"><div class="timeline-fill ${r.priority === "High" ? "high" : r.priority === "Medium" ? "medium" : "low"}" style="left:${left.toFixed(2)}%; width:${width.toFixed(2)}%;"></div></div>
           <p><strong>Dependency:</strong> ${escapeHtml(r.dependency)}</p>
-          <p><strong>Deferral risk:</strong> ${escapeHtml(r.riskOfDeferral)}</p>
           <p><strong>Recommended:</strong> ${escapeHtml(r.method)}</p>
         </div>`;
       }).join("")}
+    </div>
+
+    <div class="question question-lite">
+      <h3>Priority Action Summary</h3>
+      <ul class="evidence-list">${actionPlan.slice(0, 6).map((a) => `<li><strong>${escapeHtml(a.control)}</strong> - ${escapeHtml(a.window)} (${escapeHtml(a.owner)}): ${escapeHtml(a.recommendedAction)}</li>`).join("")}</ul>
     </div>
 
     <div class="actions">
@@ -4992,11 +5079,15 @@ function renderFinal(assessment) {
       <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPT</button>
       <button class="btn secondary" id="downloadRoadmapPdfBtn">Download Roadmap PDF</button>
     </div>
+    ${isDemoMode ? `<div class="question question-focus">
+      <h3>Demo Sample Roadmap</h3>
+      <p class="hint">Use this sample file to preview roadmap presentation before tailoring a live output.</p>
+      <div class="actions">
+        <button class="btn secondary" id="downloadDemoRoadmapBtn">Sample Roadmap (.ppt)</button>
+      </div>
+    </div>` : ""}
 
-    <div class="nav">
-      <button class="btn ghost" id="prevBtn">Previous</button>
-      <button class="btn primary" id="finishBtn">Finish and Return to Welcome</button>
-    </div>
+    ${renderNav(assessment)}
   `;
 
   document.getElementById("approachSelect").addEventListener("change", (e) => {
@@ -5009,150 +5100,45 @@ function renderFinal(assessment) {
     assessment.updatedAt = nowIso();
     saveAssessments();
   });
-  document.getElementById("refreshRoadmapBtn").addEventListener("click", () => renderFinal(assessment));
-  if (isAdvancedMode) {
-    const host = document.getElementById("maturityRadarCanvas");
-    if (host) {
-      const built = buildMaturityRadarCanvas(assessment, 920);
-      host.width = built.width;
-      host.height = built.height;
-      const ctx = host.getContext("2d");
-      ctx.drawImage(built, 0, 0);
-    }
-  }
-
-  document.getElementById("downloadDeckBtn").addEventListener("click", () => {
-    const content = documentShell("Summary Dashboard", `
-      <div style="max-width:1160px; margin:0 auto; background:#fff;">
-      <div class="cover" style="min-height:unset;">
-        <h1 style="margin:0 0 10px;">Align42 Executive Summary Dashboard</h1>
-        <p style="margin:0 0 4px;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
-        <p style="margin:0;"><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-      </div>
-      <div class="body" style="padding:20px 26px;">
-        <p><span class="icon-chip">[Summary]</span><strong>Summary:</strong> ${escapeHtml(readinessText)}</p>
-        <p><span class="icon-chip">[Audience]</span><strong>Audience mode:</strong> ${escapeHtml(audienceLabel)}</p>
-        <p><span class="icon-chip">[Guide]</span><strong>Interpretation guide:</strong> ${escapeHtml(interpretationGuide)}</p>
-        <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:12px 0;">
-          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
-          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Control coverage</div><div style="font-size:24px; font-weight:700;">${coveragePercent}%</div></div>
-          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Average maturity</div><div style="font-size:24px; font-weight:700;">${averageRating}/5</div></div>
-          <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
-        </div>
-        <p><strong>Approach / Scenario:</strong> ${escapeHtml(approachLabel)} / ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Target input:</strong> ${escapeHtml(timeline.horizonTargetText)}</p>
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
-          <img src="${complianceChartDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="Compliance profile chart" />
-          <img src="${sectionBarsDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="Section maturity chart" />
-        </div>
-        ${isAdvancedMode ? `<h2 style="margin-top:18px;">ISO 42001 Maturity Radar</h2><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="ISO 42001 maturity radar chart" />` : ""}
-        <h2 style="margin-top:18px;">Top Actions for Leadership Attention</h2>
-        <table style="width:100%; border-collapse:collapse;">
-          <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Action</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Owner</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Target</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Why it matters</th></tr>
-          ${actionRowsForAudience.map((a) => `<tr><td style="border:1px solid #d6e5dd; padding:7px;"><strong>${escapeHtml(a.control)}</strong><br><span style="font-size:11px; color:#5f7b72;">${escapeHtml(a.recommendedAction)}</span></td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.owner)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.window)} (by ${escapeHtml(a.due)})</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.businessImpact)}</td></tr>`).join("")}
-        </table>
-        <h2 style="margin-top:18px;">Roadmap Timeline</h2>
-        <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" alt="Roadmap timeline chart" />
-        <h2 style="margin-top:18px;">Critical Findings</h2>
-        ${criticalFindings.length ? `<ul>${criticalFindings.slice(0, 8).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical findings detected.</p>"}
-      </div>
-      </div>
-    `);
-    download("align42-summary-dashboard.ppt", "application/vnd.ms-powerpoint", content);
-  });
-  document.getElementById("downloadBoardBriefBtn").addEventListener("click", () => {
-    download("align42-board-brief.doc", "application/msword", boardBriefHtml());
-  });
-
-  document.getElementById("downloadCsvBtn").addEventListener("click", () => {
-    const header = ["Section", "Clause", "Control", "Weight", "Score", "Status", "Priority", "Owner", "Start Date", "Finish Date", "Duration Weeks", "Action Window", "Business Impact if Delayed", "Recommended Action", "Expected Evidence", "Notes", "Links", "Files", "Findings"];
-    const csv = [header.map(csvEscape).join(",")].concat(rows.map((r) => {
-      const controlFindings = findings.filter((f) => f.controlId && f.controlId === r.id).map((f) => `[${f.severity}] ${f.type}: ${f.message}`).join(" | ");
-      const tr = timelineById[r.id] || null;
-      const expected = conciseActionText((getControl(r.id)?.bestPractice || "").replace(/^([a-z])/i, (m) => m.toUpperCase()));
-      return [r.section, r.clause, r.control, r.weight, r.score, r.status, tr?.priority || "", tr?.owner || "", tr?.startLabel || "", tr?.endLabel || "", tr?.durationWeeks || "", tr ? actionWindowLabel(tr.endWeekScaled || 0) : "", tr ? businessImpactFromPriority(tr.priority) : "", tr ? conciseActionText(tr.method) : "", expected, r.notes, r.links.join(" | "), r.files.join(" | "), controlFindings].map(csvEscape).join(",");
-    })).join("\n");
-    download("align42-detailed-assessment.csv", "text/csv", csv);
-  });
-
-  document.getElementById("downloadDocBtn").addEventListener("click", () => {
-    download("align42-detailed-assessment-report.doc", "application/msword", reportHtml());
-  });
-  document.getElementById("downloadDemoReportBtn")?.addEventListener("click", () => {
-    download("align42-demo-sample-report.doc", "application/msword", demoSampleReportHtml());
-  });
-  document.getElementById("downloadDemoRoadmapBtn")?.addEventListener("click", () => {
-    download("align42-demo-sample-roadmap.ppt", "application/vnd.ms-powerpoint", demoSampleRoadmapHtml());
-  });
-
-  document.getElementById("downloadPdfBtn").addEventListener("click", () => {
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(reportHtml());
-    w.document.close();
-    w.focus();
-    w.print();
-  });
-
+  document.getElementById("refreshRoadmapBtn").addEventListener("click", () => renderRoadmap(assessment));
   document.getElementById("downloadRoadmapPngBtn").addEventListener("click", () => {
     const a = document.createElement("a");
     a.href = roadmapDataUrl;
     a.download = "align42-roadmap.png";
     a.click();
   });
-
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
-    const html = documentShell("Compliance Readiness Roadmap", `
-      <div style="max-width:1160px; margin:0 auto; background:#fff;">
-        <div class="cover" style="min-height:unset;">
-          <h1 style="margin:0 0 8px;">Align42 Compliance Readiness Roadmap</h1>
-          <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-        </div>
-        <div class="body" style="padding:20px 26px;">
-          <p><span class="icon-chip">[Plan]</span><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-          <p><span class="icon-chip">[Timeline]</span><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
-          <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
-          <h2>Top Priority Actions</h2>
-          <table style="width:100%; border-collapse:collapse;">
-            <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Control</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Owner</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Window</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Action</th></tr>
-            ${actionPlan.slice(0, 8).map((a) => `<tr><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.control)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.owner)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.window)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.recommendedAction)}</td></tr>`).join("")}
-          </table>
-        </div>
-      </div>
-    `);
+    const html = `
+      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px;">
+        <h1>Align42 Compliance Readiness Roadmap</h1>
+        <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
+        <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
+        <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
+      </body></html>
+    `;
     download("align42-roadmap.ppt", "application/vnd.ms-powerpoint", html);
   });
-
   document.getElementById("downloadRoadmapPdfBtn").addEventListener("click", () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    w.document.write(documentShell("Compliance Readiness Roadmap", `
-      <div style="padding:18px 20px;">
-        <h1 style="margin:0 0 8px;">Align42 Compliance Readiness Roadmap</h1>
+    w.document.write(`
+      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px;">
+        <h1>Align42 Compliance Readiness Roadmap</h1>
         <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-        <p><span class="icon-chip">[Plan]</span><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><span class="icon-chip">[Timeline]</span><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
+        <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
+        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
         <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
-        <h2>Priority Actions</h2>
-        <ul>${actionPlan.slice(0, 8).map((a) => `<li><strong>${escapeHtml(a.control)}</strong> - ${escapeHtml(a.window)} (${escapeHtml(a.owner)}): ${escapeHtml(a.recommendedAction)}</li>`).join("")}</ul>
-      </div>
-    `));
+      </body></html>
+    `);
     w.document.close();
     w.focus();
     w.print();
   });
-
-  document.getElementById("prevBtn").addEventListener("click", () => {
-    assessment.data.currentSection = Math.max(0, assessment.data.currentSection - 1);
-    flushAssessmentSave(assessment);
-    renderAssessment(assessment);
+  document.getElementById("downloadDemoRoadmapBtn")?.addEventListener("click", () => {
+    download("align42-demo-sample-roadmap.ppt", "application/vnd.ms-powerpoint", demoSampleRoadmapHtml());
   });
-
-  document.getElementById("finishBtn").addEventListener("click", () => {
-    flushAssessmentSave(assessment);
-    state.currentAssessmentId = null;
-    render();
-  });
+  bindNav(assessment);
 }
 
 function renderNav(assessment) {
