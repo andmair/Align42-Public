@@ -2,13 +2,36 @@
 
 Local-first ISO 42001 assessment application.
 
-## Preferred installation: Docker
+## Supported installation options
 
-Docker is the preferred way to install and run Align42.
+Align42 supports two installation methods only:
 
-### Quick start
+1. Local run
+2. Docker run
 
-Build and run with the bundled helper script:
+### Option 1: Local run
+
+Open the app directly in your browser:
+
+```bash
+open Align42.html
+```
+
+For better AI-provider compatibility, you can also run the local server:
+
+```bash
+python3 server.py
+```
+
+Then open:
+
+`http://localhost:8000/Align42.html`
+
+### Option 2: Docker run
+
+Docker is the preferred packaged installation path.
+
+Quick start:
 
 ```bash
 ./scripts/docker_install.sh
@@ -18,17 +41,10 @@ Then open:
 
 `http://localhost:3000/Align42.html`
 
-### Manual Docker commands
-
-Build the image:
+Manual Docker commands:
 
 ```bash
 docker build -t align42 .
-```
-
-Run the container:
-
-```bash
 docker run -d --name align42 -p 3000:3000 align42
 ```
 
@@ -38,13 +54,13 @@ Stop the container:
 docker rm -f align42
 ```
 
-### Docker Compose
+Docker Compose:
 
 ```bash
 docker compose up --build -d
 ```
 
-### Helper scripts
+Helper scripts:
 
 - `./scripts/docker_build.sh`
 - `./scripts/docker_run.sh`
@@ -53,7 +69,7 @@ docker compose up --build -d
 - `./scripts/docker_doctor.sh`
 - `./scripts/docker_install.sh`
 
-### Make shortcuts
+Make shortcuts:
 
 - `make install`
 - `make build`
@@ -62,16 +78,6 @@ docker compose up --build -d
 - `make logs`
 - `make doctor`
 - `make test`
-
-## Local architecture
-
-- Runs fully in the browser on the local device.
-- Optional local server (`server.py`) can be used for localhost hosting and API/security regression tests.
-- External dependencies are optional:
-  - local default email client (for draft emails)
-  - optional AI provider API calls in **Advanced mode** (OpenAI, Anthropic, Gemini, Azure OpenAI)
-- Data is stored locally in browser storage.
-- Includes a dedicated local **Delegations Audit Trail** page with status transitions (`SENT`, `RESPONDED`, `CLOSED`) and per-delegate response history.
 
 ## Automated tests
 
@@ -109,28 +115,6 @@ Standalone browser test page:
 - Align42 creates `mailto:` drafts in the default local email client.
 - The user customizes and sends emails manually.
 - Used for delegation requests.
-
-## Deprecated distributions
-
-The Windows/macOS installer packages and the clean folder distribution are retained in the repository for future use, but are currently deprecated and should not be rebuilt unless explicitly re-enabled.
-
-Rebuild legacy installers only if required:
-
-```bash
-ALLOW_DEPRECATED_DISTRIBUTIONS=1 ./scripts/build_single_file_installers.sh
-```
-
-Rebuild the legacy folder distribution only if required:
-
-```bash
-ALLOW_DEPRECATED_DISTRIBUTIONS=1 ./scripts/build_folder_distribution.sh
-```
-
-Build the deprecated Windows `.exe` only if legacy installers are explicitly re-enabled:
-
-```bash
-ALLOW_DEPRECATED_DISTRIBUTIONS=1 BUILD_WINDOWS_EXE=1 ./scripts/build_single_file_installers.sh
-```
 
 ## Notes
 
