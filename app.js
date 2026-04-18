@@ -4194,31 +4194,54 @@ function parseTargetDateValue(raw, now = new Date()) {
 }
 
 function roadmapScenarioConstraints(assessment) {
+  const context = assessment.data.context || {};
+  const sizeBand = normalizeOrgSizeBand(context.size);
+  const frameworks = getApplicableFrameworks(context);
+  const sector = context.industrySector || inferSectorFromBusinessContext(context) || "";
+  const hasHeavyRegulatory = frameworks.some((f) => /eu ai act|gdpr|nist|privacy act|pdpa|basel|prudential|clinical|health/i.test(`${f}`))
+    || /^K:|^Q:|^O:/.test(sector);
+  const sizeProfile = sizeBand === ORG_SIZE_BANDS[0]
+    ? { maxParallelDelta: -1, paceFactor: 1.18, note: "micro-organisation delivery capacity" }
+    : sizeBand === ORG_SIZE_BANDS[1]
+      ? { maxParallelDelta: -1, paceFactor: 1.1, note: "small-team capacity limits" }
+      : sizeBand === ORG_SIZE_BANDS[2]
+        ? { maxParallelDelta: 0, paceFactor: 1.0, note: "medium-size delivery assumptions" }
+        : sizeBand === ORG_SIZE_BANDS[3]
+          ? { maxParallelDelta: 1, paceFactor: 0.94, note: "large-team parallel delivery capacity" }
+          : sizeBand === ORG_SIZE_BANDS[4]
+            ? { maxParallelDelta: 1, paceFactor: 0.9, note: "enterprise-scale delivery capacity" }
+            : { maxParallelDelta: 0, paceFactor: 1.0, note: "default capacity assumptions" };
+  const contextPaceFactor = hasHeavyRegulatory ? Math.max(0.9, sizeProfile.paceFactor * 1.06) : sizeProfile.paceFactor;
+  const contextParallelDelta = hasHeavyRegulatory ? Math.max(-1, sizeProfile.maxParallelDelta - 1) : sizeProfile.maxParallelDelta;
+  const contextNotes = [
+    `Context sizing: ${sizeBand || "size not specified"} (${sizeProfile.note})`,
+    hasHeavyRegulatory ? "Context regulation: higher evidence burden from geography/industry/framework profile." : "Context regulation: baseline evidence burden."
+  ];
   const scenario = assessment.data.roadmapScenario || "standard";
   if (scenario === "budget") {
     return {
       scenarioLabel: "Budget constrained",
-      maxParallel: 2,
-      paceFactor: 1.15,
+      maxParallel: Math.max(1, 2 + contextParallelDelta),
+      paceFactor: 1.15 * contextPaceFactor,
       hardHorizonWeeks: null,
-      notes: "Constraint emphasis: fewer parallel workstreams and lower tooling spend."
+      notes: `Constraint emphasis: fewer parallel workstreams and lower tooling spend. ${contextNotes.join(" ")}`
     };
   }
   if (scenario === "regulator_6m") {
     return {
       scenarioLabel: "Regulator review < 6 months",
-      maxParallel: 4,
-      paceFactor: 0.85,
+      maxParallel: Math.max(2, 4 + contextParallelDelta),
+      paceFactor: 0.85 * contextPaceFactor,
       hardHorizonWeeks: 26,
-      notes: "Constraint emphasis: accelerated compliance-evidence delivery before external review."
+      notes: `Constraint emphasis: accelerated compliance-evidence delivery before external review. ${contextNotes.join(" ")}`
     };
   }
   return {
     scenarioLabel: "Standard",
-    maxParallel: 3,
-    paceFactor: 1.0,
+    maxParallel: Math.max(1, 3 + contextParallelDelta),
+    paceFactor: 1.0 * contextPaceFactor,
     hardHorizonWeeks: null,
-    notes: "Constraint emphasis: balanced delivery speed and control quality."
+    notes: `Constraint emphasis: balanced delivery speed and control quality. ${contextNotes.join(" ")}`
   };
 }
 
@@ -4236,6 +4259,27 @@ function roadmapRows(assessment) {
   const approach = assessment.data.preferredApproach || "fastest";
   const scenario = assessment.data.roadmapScenario || "standard";
   const constraints = roadmapScenarioConstraints(assessment);
+  const context = assessment.data.context || {};
+  const sizeBand = normalizeOrgSizeBand(context.size);
+  const sector = context.industrySector || inferSectorFromBusinessContext(context) || "";
+  const geography = [context.country, context.stateProvince].filter(Boolean).join(", ");
+  const frameworks = getApplicableFrameworks(context);
+  const roleTextLen = `${context.roles || ""}`.trim().length;
+  const platformTextLen = `${context.platforms || ""}`.trim().length;
+  const contextCompletenessFactor = (roleTextLen >= 80 && platformTextLen >= 80) ? 0.96 : 1.06;
+  const sizeDurationFactor = sizeBand === ORG_SIZE_BANDS[0]
+    ? 1.22
+    : sizeBand === ORG_SIZE_BANDS[1]
+      ? 1.12
+      : sizeBand === ORG_SIZE_BANDS[2]
+        ? 1.0
+        : sizeBand === ORG_SIZE_BANDS[3]
+          ? 0.94
+          : sizeBand === ORG_SIZE_BANDS[4]
+            ? 0.9
+            : 1.0;
+  const heightenedRegulatoryScope = frameworks.some((f) => /eu ai act|gdpr|nist|privacy act|pdpa|basel|prudential|clinical|health/i.test(`${f}`))
+    || /^K:|^Q:|^O:/.test(sector);
   const dependentsCount = {};
   Object.keys(ROADMAP_DEPENDENCY_GRAPH).forEach((id) => { dependentsCount[id] = 0; });
   Object.entries(ROADMAP_DEPENDENCY_GRAPH).forEach(([_id, deps]) => deps.forEach((d) => { dependentsCount[d] = (dependentsCount[d] || 0) + 1; }));
@@ -4270,6 +4314,21 @@ function roadmapRows(assessment) {
       if (ROADMAP_REGULATORY_HOT.has(r.id) && gap >= 1) priority = "High";
       method = `${method} Regulator <6 months variant: prioritize demonstrable compliance evidence and closure of regulatory-critical controls.`;
       durationWeeks = Math.max(2, Math.round(durationWeeks * constraints.paceFactor));
+    }
+    durationWeeks = Math.max(2, Math.round(durationWeeks * sizeDurationFactor * contextCompletenessFactor));
+    if (heightenedRegulatoryScope && ROADMAP_REGULATORY_HOT.has(r.id) && gap >= 1) {
+      priority = "High";
+      durationWeeks = Math.max(durationWeeks, 4);
+      method = `${method} Context profile indicates higher regulatory sensitivity (${frameworks.slice(0, 2).join(" / ") || "selected frameworks"}), so this control is scheduled for stronger evidence depth.`;
+    }
+    if (geography) {
+      method = `${method} Tailored for geography: ${geography}.`;
+    }
+    if (sector) {
+      method = `${method} Tailored for sector: ${sector}.`;
+    }
+    if (sizeBand) {
+      method = `${method} Delivery pacing aligned to organisation size: ${sizeBand}.`;
     }
 
     const criticalPath = priority === "High" || (dependentsCount[r.id] || 0) >= 2 || unmetDeps.length > 0;
@@ -5037,6 +5096,13 @@ function renderFinal(assessment) {
             border: 1px solid var(--doc-line);
             border-radius: 10px;
             background: #ffffff;
+            height: auto;
+          }
+          .timeline-img-appendix {
+            width: 100%;
+            max-width: 24cm;
+            margin: 0 auto;
+            display: block;
           }
           .pill {
             display: inline-block;
@@ -5058,8 +5124,19 @@ function renderFinal(assessment) {
           th { background: var(--doc-accent-soft); }
           .small { font-size: 9pt; color: var(--doc-muted); }
           .break-after { page-break-after: always; }
+          .break-before { page-break-before: always; }
+          .appendix-roadmap {
+            page-break-before: always;
+          }
           .page-no::after { content: counter(page); }
           .page-total::after { content: counter(pages); }
+          @page roadmap-landscape {
+            size: A4 landscape;
+            margin: 1.6cm;
+          }
+          .appendix-roadmap.landscape {
+            page: roadmap-landscape;
+          }
           @media (max-width: 900px) {
             .kpi { grid-template-columns: 1fr 1fr; }
             .viz-grid { grid-template-columns: 1fr; }
@@ -5168,7 +5245,7 @@ function renderFinal(assessment) {
               <div class="card"><div class="label">Horizon</div><div class="value" style="font-size:16px;">${escapeHtml(horizonSummary)}</div></div>
             </div>
             <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
-            <img class="timeline-img" src="${roadmapDataUrl}" alt="Roadmap timeline chart" />
+            <p class="small">Detailed roadmap chart is provided in Appendix A in landscape format to preserve readability on A4 exports.</p>
             <table>
               <tr><th>#</th><th>Control</th><th>Priority</th><th>Owner</th><th>Start</th><th>Finish</th><th>Dependency Summary</th></tr>
               ${timelineRows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.control)}</td><td>${escapeHtml(r.priority)}${r.criticalPath ? " (critical path)" : ""}</td><td>${escapeHtml(r.owner)}</td><td>${escapeHtml(r.startLabel)}</td><td>${escapeHtml(r.endLabel)}</td><td>${escapeHtml(r.dependency)}</td></tr>`).join("")}
@@ -5190,6 +5267,12 @@ function renderFinal(assessment) {
               <tr><th>ISO 42001 Dimension</th><th>Average Maturity</th><th>Compliant Controls</th><th>Interpretation</th></tr>
               ${sectionRows.map((s) => `<tr><td>${escapeHtml(s.section)}</td><td>${s.average.toFixed(1)}/5</td><td>${s.compliantCount}/${s.totalControls}</td><td>${escapeHtml(s.average >= 4 ? "At or near expected readiness threshold." : s.average >= 3 ? "Partially established; strengthen repeatability and evidence." : "Requires foundational uplift and clear ownership.")}</td></tr>`).join("")}
             </table>
+
+            <div class="appendix-roadmap landscape break-before">
+              <h2>Appendix A: Detailed Roadmap Timeline (Landscape)</h2>
+              <p class="small">This appendix presents the full timeline in landscape orientation to ensure all labels and dependencies fit within page margins.</p>
+              <img class="timeline-img timeline-img-appendix" src="${roadmapDataUrl}" alt="Detailed roadmap timeline chart" />
+            </div>
           </div>
         </div>
   `);

@@ -13,6 +13,7 @@ SUITES = [
     ("Core suite (synthetic data)", "tests.test_core"),
     ("Dependency suite (simulated externals)", "tests.test_dependencies"),
     ("Server suite (auth/security/migrations)", "tests.test_server"),
+    ("Roadmap/report regression suite", "tests.test_roadmap_logic"),
 ]
 
 
