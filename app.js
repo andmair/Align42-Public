@@ -8,6 +8,25 @@ const STORAGE = {
   settings: `${STORAGE_PREFIX}_settings_v1`,
   assessments: `${STORAGE_PREFIX}_assessments_v1`
 };
+const STORAGE_CRYPTO_DB = `${STORAGE_PREFIX}_crypto_db`;
+const STORAGE_CRYPTO_STORE = "keys";
+const STORAGE_CRYPTO_KEY_ID = "local_storage_key_v1";
+const DEFAULT_SETTINGS = {
+  aiMode: false,
+  aiProvider: "openai",
+  openaiKey: "",
+  anthropicKey: "",
+  geminiKey: "",
+  azureApiKey: "",
+  azureEndpoint: "",
+  azureDeployment: "",
+  azureApiVersion: "2024-10-21",
+  aiDisclaimerAcknowledged: false,
+  aiDiagnostics: [],
+  settingsOpen: false,
+  assessmentMode: "simple",
+  aiCredentialStorage: "session"
+};
 
 const OPENAI_SETUP_URL = "https://platform.openai.com/docs/quickstart?api-mode=responses";
 const ANTHROPIC_SETUP_URL = "https://docs.anthropic.com/en/api/getting-started";
@@ -238,41 +257,168 @@ const sections = [
 const app = document.getElementById("app");
 
 let state = {
-  profile: load(STORAGE.profile, null),
-  settings: load(STORAGE.settings, {
-    aiMode: false,
-    aiProvider: "openai",
-    openaiKey: "",
-    anthropicKey: "",
-    geminiKey: "",
-    azureApiKey: "",
-    azureEndpoint: "",
-    azureDeployment: "",
-    azureApiVersion: "2024-10-21",
-    aiDisclaimerAcknowledged: false,
-    aiDiagnostics: [],
-    settingsOpen: false,
-    assessmentMode: "simple",
-    aiCredentialStorage: "session"
-  }),
-  assessments: load(STORAGE.assessments, []),
+  profile: null,
+  settings: { ...DEFAULT_SETTINGS },
+  assessments: [],
   currentAssessmentId: null,
   view: "assessment",
   ui: { uploadOpen: {}, summaryOpen: {}, profileEditorOpen: false, loggedOut: false }
 };
+let storageReady = false;
+let storageCryptoAvailable = false;
+let storageSecurityBlocked = false;
+let storageCryptoDbPromise = null;
+const storageEncoder = new TextEncoder();
+const storageDecoder = new TextDecoder();
+let storagePersistChain = Promise.resolve();
 
 let dictationState = {
   recognition: null,
   activeTargetId: null
 };
 
-function load(key, fallback) {
+function queueStoragePersist(task) {
+  storagePersistChain = storagePersistChain
+    .then(() => task())
+    .catch((err) => {
+      console.error("Align42 encrypted storage error", err);
+      toast("Secure local save failed. Check browser storage permissions.");
+    });
+  return storagePersistChain;
+}
+
+function storageCryptoSupported() {
+  return !!(window.crypto?.subtle && window.indexedDB);
+}
+
+function storageDefaultValue(fallback) {
+  if (Array.isArray(fallback)) return [...fallback];
+  if (fallback && typeof fallback === "object") return { ...fallback };
+  return fallback;
+}
+
+function bytesToBase64(bytes) {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+function base64ToBytes(value) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function openStorageCryptoDb() {
+  if (!storageCryptoSupported()) return Promise.resolve(null);
+  if (storageCryptoDbPromise) return storageCryptoDbPromise;
+  storageCryptoDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(STORAGE_CRYPTO_DB, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(STORAGE_CRYPTO_STORE)) db.createObjectStore(STORAGE_CRYPTO_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Unable to open secure storage database"));
+  });
+  return storageCryptoDbPromise;
+}
+
+async function storageCryptoGet(storeKey) {
+  const db = await openStorageCryptoDb();
+  if (!db) return null;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORAGE_CRYPTO_STORE, "readonly");
+    const request = tx.objectStore(STORAGE_CRYPTO_STORE).get(storeKey);
+    request.onsuccess = () => resolve(request.result || null);
+    request.onerror = () => reject(request.error || new Error("Unable to read secure storage key"));
+  });
+}
+
+async function storageCryptoSet(storeKey, value) {
+  const db = await openStorageCryptoDb();
+  if (!db) return;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORAGE_CRYPTO_STORE, "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("Unable to save secure storage key"));
+    tx.objectStore(STORAGE_CRYPTO_STORE).put(value, storeKey);
+  });
+}
+
+async function storageCryptoDelete(storeKey) {
+  const db = await openStorageCryptoDb();
+  if (!db) return;
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORAGE_CRYPTO_STORE, "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error("Unable to delete secure storage key"));
+    tx.objectStore(STORAGE_CRYPTO_STORE).delete(storeKey);
+  });
+}
+
+async function storageEncryptionKey() {
+  if (!storageCryptoAvailable) return null;
+  let key = await storageCryptoGet(STORAGE_CRYPTO_KEY_ID);
+  if (key) return key;
+  key = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  await storageCryptoSet(STORAGE_CRYPTO_KEY_ID, key);
+  return key;
+}
+
+async function encryptStorageValue(value) {
+  const json = JSON.stringify(value);
+  if (!storageCryptoAvailable) throw new Error("Encrypted local storage is not available in this browser");
+  const key = await storageEncryptionKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    storageEncoder.encode(json)
+  );
+  return JSON.stringify({
+    scheme: "align42-aes-gcm-v1",
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(cipher))
+  });
+}
+
+async function decryptStorageValue(raw, fallback) {
+  if (!raw) return { value: storageDefaultValue(fallback), migrated: false };
   try {
-    const v = localStorage.getItem(key);
-    return v ? JSON.parse(v) : fallback;
-  } catch {
-    return fallback;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.scheme !== "align42-aes-gcm-v1") {
+      if (!storageCryptoAvailable) return { value: storageDefaultValue(fallback), migrated: false };
+      return { value: parsed, migrated: true };
+    }
+    if (!storageCryptoAvailable) return { value: storageDefaultValue(fallback), migrated: false };
+    const key = await storageEncryptionKey();
+    const iv = base64ToBytes(parsed.iv || "");
+    const ciphertext = base64ToBytes(parsed.ciphertext || "");
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ciphertext);
+    return { value: JSON.parse(storageDecoder.decode(plain)), migrated: false };
+  } catch (err) {
+    console.warn("Align42 could not decrypt stored value", err);
+    return { value: storageDefaultValue(fallback), migrated: false };
   }
+}
+
+async function readSecureStorage(key, fallback) {
+  const raw = localStorage.getItem(key);
+  const decoded = await decryptStorageValue(raw, fallback);
+  if (decoded.migrated) {
+    const encrypted = await encryptStorageValue(decoded.value);
+    localStorage.setItem(key, encrypted);
+  }
+  return decoded.value;
+}
+
+function persistSecureStorage(key, value) {
+  return queueStoragePersist(async () => {
+    const encoded = await encryptStorageValue(value);
+    localStorage.setItem(key, encoded);
+  });
 }
 
 const LOGOUT_BACKUP_STORAGE = {
@@ -305,40 +451,62 @@ function normalizedProfile(profile) {
   };
 }
 
+function isValidEmailSyntax(value) {
+  const email = `${value || ""}`.trim();
+  if (!email) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
 function saveProfile() {
   state.profile = normalizedProfile(state.profile);
-  localStorage.setItem(STORAGE.profile, JSON.stringify(state.profile));
+  void persistSecureStorage(STORAGE.profile, state.profile);
 }
 
-function persistLogoutBackups() {
-  localStorage.setItem(LOGOUT_BACKUP_STORAGE.profile, JSON.stringify(load(STORAGE.profile, null)));
-  localStorage.setItem(LOGOUT_BACKUP_STORAGE.settings, JSON.stringify(load(STORAGE.settings, {})));
-  localStorage.setItem(LOGOUT_BACKUP_STORAGE.assessments, JSON.stringify(load(STORAGE.assessments, [])));
+async function persistLogoutBackups() {
+  await queueStoragePersist(async () => {
+    const profile = localStorage.getItem(STORAGE.profile);
+    const settings = localStorage.getItem(STORAGE.settings);
+    const assessments = localStorage.getItem(STORAGE.assessments);
+    if (profile) localStorage.setItem(LOGOUT_BACKUP_STORAGE.profile, profile);
+    else localStorage.removeItem(LOGOUT_BACKUP_STORAGE.profile);
+    if (settings) localStorage.setItem(LOGOUT_BACKUP_STORAGE.settings, settings);
+    else localStorage.removeItem(LOGOUT_BACKUP_STORAGE.settings);
+    if (assessments) localStorage.setItem(LOGOUT_BACKUP_STORAGE.assessments, assessments);
+    else localStorage.removeItem(LOGOUT_BACKUP_STORAGE.assessments);
+  });
 }
 
-function clearActiveStorageForLogout() {
+async function clearActiveStorageForLogout() {
+  await queueStoragePersist(async () => {
+    localStorage.removeItem(STORAGE.profile);
+    localStorage.removeItem(STORAGE.settings);
+    localStorage.removeItem(STORAGE.assessments);
+  });
   localStorage.removeItem(STORAGE.profile);
   localStorage.removeItem(STORAGE.settings);
   localStorage.removeItem(STORAGE.assessments);
   try { sessionStorage.clear(); } catch {}
 }
 
-function restoreAfterLogout() {
-  const profile = load(LOGOUT_BACKUP_STORAGE.profile, null);
-  const settings = load(LOGOUT_BACKUP_STORAGE.settings, null);
-  const assessments = load(LOGOUT_BACKUP_STORAGE.assessments, null);
-  if (profile) localStorage.setItem(STORAGE.profile, JSON.stringify(profile));
-  if (settings) localStorage.setItem(STORAGE.settings, JSON.stringify(settings));
-  if (assessments) localStorage.setItem(STORAGE.assessments, JSON.stringify(assessments));
+async function restoreAfterLogout() {
+  const profileRaw = localStorage.getItem(LOGOUT_BACKUP_STORAGE.profile);
+  const settingsRaw = localStorage.getItem(LOGOUT_BACKUP_STORAGE.settings);
+  const assessmentsRaw = localStorage.getItem(LOGOUT_BACKUP_STORAGE.assessments);
+  if (profileRaw) localStorage.setItem(STORAGE.profile, profileRaw);
+  if (settingsRaw) localStorage.setItem(STORAGE.settings, settingsRaw);
+  if (assessmentsRaw) localStorage.setItem(STORAGE.assessments, assessmentsRaw);
   localStorage.removeItem(LOGOUT_BACKUP_STORAGE.profile);
   localStorage.removeItem(LOGOUT_BACKUP_STORAGE.settings);
   localStorage.removeItem(LOGOUT_BACKUP_STORAGE.assessments);
+  const profile = await readSecureStorage(STORAGE.profile, null);
+  const settings = await readSecureStorage(STORAGE.settings, null);
+  const assessments = await readSecureStorage(STORAGE.assessments, []);
   return { profile, settings, assessments };
 }
 
-function clearVisibleSessionState() {
-  persistLogoutBackups();
-  clearActiveStorageForLogout();
+async function clearVisibleSessionState() {
+  await persistLogoutBackups();
+  await clearActiveStorageForLogout();
   state.profile = null;
   state.assessments = [];
   state.currentAssessmentId = null;
@@ -359,10 +527,49 @@ function clearVisibleSessionState() {
   state.ui.profileEditorOpen = true;
   state.ui.loggedOut = true;
 }
-function saveSettings() { localStorage.setItem(STORAGE.settings, JSON.stringify(storageSettingsSnapshot())); }
+
+async function deleteProfileAndLocalData() {
+  await queueStoragePersist(async () => {
+    localStorage.removeItem(STORAGE.profile);
+    localStorage.removeItem(STORAGE.settings);
+    localStorage.removeItem(STORAGE.assessments);
+    localStorage.removeItem(LOGOUT_BACKUP_STORAGE.profile);
+    localStorage.removeItem(LOGOUT_BACKUP_STORAGE.settings);
+    localStorage.removeItem(LOGOUT_BACKUP_STORAGE.assessments);
+    await storageCryptoDelete(STORAGE_CRYPTO_KEY_ID);
+  });
+  localStorage.removeItem(STORAGE.profile);
+  localStorage.removeItem(STORAGE.settings);
+  localStorage.removeItem(STORAGE.assessments);
+  localStorage.removeItem(LOGOUT_BACKUP_STORAGE.profile);
+  localStorage.removeItem(LOGOUT_BACKUP_STORAGE.settings);
+  localStorage.removeItem(LOGOUT_BACKUP_STORAGE.assessments);
+  try { sessionStorage.clear(); } catch {}
+  state.profile = null;
+  state.assessments = [];
+  state.currentAssessmentId = null;
+  state.view = "assessment";
+  state.settings = {
+    ...state.settings,
+    aiMode: false,
+    settingsOpen: false,
+    openaiKey: "",
+    anthropicKey: "",
+    geminiKey: "",
+    azureApiKey: "",
+    azureEndpoint: "",
+    azureDeployment: "",
+    aiDiagnostics: []
+  };
+  state.ui.uploadOpen = {};
+  state.ui.summaryOpen = {};
+  state.ui.profileEditorOpen = true;
+  state.ui.loggedOut = false;
+}
+function saveSettings() { void persistSecureStorage(STORAGE.settings, storageSettingsSnapshot()); }
 function assessmentMode() { return state.settings?.assessmentMode === "advanced" ? "advanced" : "simple"; }
 function aiFeaturesEnabled() { return assessmentMode() === "advanced" && !!state.settings?.aiMode; }
-function saveAssessments() { localStorage.setItem(STORAGE.assessments, JSON.stringify(state.assessments)); }
+function saveAssessments() { void persistSecureStorage(STORAGE.assessments, state.assessments); }
 const pendingAssessmentSaves = new Map();
 function scheduleAssessmentSave(assessment, delayMs = 400) {
   if (!assessment || !assessment.id) return;
@@ -385,6 +592,24 @@ function flushAssessmentSave(assessment) {
   assessment.updatedAt = nowIso();
   saveAssessments();
 }
+async function bootstrapSecureState() {
+  storageCryptoAvailable = storageCryptoSupported();
+  if (!storageCryptoAvailable) {
+    storageSecurityBlocked = true;
+    render();
+    return;
+  }
+  const profile = await readSecureStorage(STORAGE.profile, null);
+  const settings = await readSecureStorage(STORAGE.settings, DEFAULT_SETTINGS);
+  const assessments = await readSecureStorage(STORAGE.assessments, []);
+  state.profile = profile ? normalizedProfile(profile) : null;
+  state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  state.assessments = Array.isArray(assessments) ? assessments : [];
+  ensureSettingsDefaults();
+  storageReady = true;
+  render();
+}
+
 function ensureSettingsDefaults() {
   const s = state.settings || {};
   const storageMode = s.aiCredentialStorage === "persistent" ? "persistent" : "session";
@@ -2371,6 +2596,32 @@ function renderDelegationsPage(assessment) {
 }
 
 function render() {
+  if (storageSecurityBlocked) {
+    app.innerHTML = `
+      <div class="shell">
+        <div class="container card content">
+          <div class="question question-focus">
+            <h3>Secure storage unavailable</h3>
+            <p class="hint">Align42 requires browser encryption support before it will store profile or assessment data on this device.</p>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+  if (!storageReady) {
+    app.innerHTML = `
+      <div class="shell">
+        <div class="container card content">
+          <div class="question question-focus">
+            <h3>Preparing secure local storage</h3>
+            <p class="hint">Align42 is loading your encrypted local data.</p>
+          </div>
+        </div>
+      </div>
+    `;
+    return;
+  }
   const assessment = currentAssessment();
   if (state.view === "delegations" && assessment) return renderDelegationsPage(assessment);
   if (assessment) return renderAssessment(assessment);
@@ -2405,7 +2656,7 @@ function renderWelcome() {
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
           ${mode === "simple" ? `<button class="btn secondary" id="demoAssessmentBtn">🧪 Demo Assessment</button>` : ""}
-          <button class="btn ghost" id="editProfileBtn">👤 ${showProfileEditor ? "Hide Profile" : "Edit Profile"}</button>
+          ${hasProfile ? `<button class="btn ghost" id="editProfileBtn">👤 ${showProfileEditor ? "Close Profile" : "Edit Profile"}</button>` : ""}
         </div>
       </header>
 
@@ -2433,9 +2684,12 @@ function renderWelcome() {
             <label style="margin-top:0.6rem;">Role<input id="profileRole" type="text" placeholder="Example: Risk Manager" value="${escapeHtml(state.profile?.role || "")}" /></label>
             <div class="actions" style="margin-top:0.7rem;">
               <button class="btn primary" id="saveProfileBtn">Save Profile</button>
-              ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close</button>` : ""}
+              ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close Profile</button>` : ""}
               ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
+              ${hasProfile ? `<button class="btn ghost" id="deleteProfileBtn">Delete Profile</button>` : ""}
             </div>
+            ${hasProfile ? `<p class="hint" style="margin-top:0.55rem;"><strong>Warning:</strong> Deleting your profile will also delete all profile details, saved assessments, AI settings, and other data stored locally on this device. Download any assessment results you need before continuing.</p>
+            <label style="margin-top:0.45rem;">Type DELETE to confirm permanent local deletion<input id="deleteProfileConfirm" type="text" placeholder="DELETE" /></label>` : ""}
           </div>
          ` : ""}
         <div class="question">
@@ -2560,13 +2814,14 @@ function renderWelcome() {
   `;
 
   document.getElementById("homeBtn").addEventListener("click", goHome);
-  document.getElementById("saveProfileBtn")?.addEventListener("click", () => {
+  document.getElementById("saveProfileBtn")?.addEventListener("click", async () => {
     const name = document.getElementById("profileName").value.trim();
     const email = document.getElementById("profileEmail").value.trim();
     const role = document.getElementById("profileRole").value.trim();
     if (!name || !email) return toast("Name and email are required.");
+    if (!isValidEmailSyntax(email)) return toast("Enter a valid email address.");
     if (state.ui.loggedOut) {
-      const restored = restoreAfterLogout();
+      const restored = await restoreAfterLogout();
       state.assessments = restored.assessments || [];
       state.settings = { ...state.settings, ...(restored.settings || {}) };
       state.ui.loggedOut = false;
@@ -2605,7 +2860,7 @@ function renderWelcome() {
     toast("Demo assessment created.");
   });
 
-  document.getElementById("editProfileBtn").addEventListener("click", () => {
+  document.getElementById("editProfileBtn")?.addEventListener("click", () => {
     state.ui.profileEditorOpen = !state.ui.profileEditorOpen;
     render();
   });
@@ -2613,10 +2868,22 @@ function renderWelcome() {
     state.ui.profileEditorOpen = false;
     render();
   });
-  document.getElementById("logoutBtn")?.addEventListener("click", () => {
-    clearVisibleSessionState();
+  document.getElementById("logoutBtn")?.addEventListener("click", async () => {
+    await clearVisibleSessionState();
     render();
     toast("Logged out. Local saved data has been hidden from this session.");
+  });
+  document.getElementById("deleteProfileBtn")?.addEventListener("click", async () => {
+    const typed = (document.getElementById("deleteProfileConfirm")?.value || "").trim();
+    if (typed !== "DELETE") {
+      toast("Type DELETE to confirm profile deletion.");
+      return;
+    }
+    const confirmed = window.confirm("Delete profile and all locally stored assessment data on this device? Download any assessment results you need before continuing.");
+    if (!confirmed) return;
+    await deleteProfileAndLocalData();
+    render();
+    toast("Profile and local data deleted from this device.");
   });
 
   document.getElementById("aiModeToggle")?.addEventListener("change", (e) => {
@@ -2775,7 +3042,6 @@ function renderAssessment(assessment) {
   }
   const completion = completionPercent(assessment);
   const score = weightedScorePercent(assessment);
-  const delegateOpen = !!(state.ui.delegateOpen && state.ui.delegateOpen[section.id]);
   const sectionDelegation = sectionDelegationSummary(assessment, section);
 
   app.innerHTML = `
@@ -2787,7 +3053,6 @@ function renderAssessment(assessment) {
         </div>
         <div class="actions">
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
-          <button class="btn warn" id="delegateBtn">${section.type === "controls" ? (delegateOpen ? "📨 Hide Delegate" : "📨 Delegate") : "Delegate (Controls only)"}</button>
           <button class="btn secondary" id="delegationsBtn">📋 Delegations</button>
           <button class="btn secondary" id="saveBtn">💾 Save</button>
           <button class="btn ghost" id="backBtn">← Back</button>
@@ -2851,16 +3116,6 @@ function renderAssessment(assessment) {
     state.view = "delegations";
     render();
   });
-  document.getElementById("delegateBtn").addEventListener("click", () => {
-    if (section.type !== "controls") {
-      toast("Delegation is available on control sections.");
-      return;
-    }
-    if (!state.ui.delegateOpen) state.ui.delegateOpen = {};
-    state.ui.delegateOpen[section.id] = !state.ui.delegateOpen[section.id];
-    renderAssessment(assessment);
-  });
-
   app.querySelectorAll(".section-progress-item[data-jump-section]").forEach((el) => {
     const jumpToSection = (target) => {
       const idx = Number(target.dataset.jumpSection);
@@ -3397,6 +3652,7 @@ function renderControls(assessment, section) {
           <p class="hint">${mode === "advanced" ? "Advanced mode scoring: 0.5 increments for nuanced maturity." : "Simple mode scoring: whole-number 1-5 assessment."}</p>
 
           <div class="control-actions">
+            <button class="btn warn small" type="button" data-delegate-toggle="section">${delegateOpen ? "📨 Hide Delegate" : "📨 Delegate"}</button>
             <button class="btn ghost small" type="button" data-example-toggle="${c.id}">Show Best Practice Example</button>
             ${mode === "advanced" ? `
               <button class="btn secondary small" type="button" data-ai-action="${c.id}:interpret">AI Interpret Response</button>
@@ -3523,6 +3779,14 @@ function renderControls(assessment, section) {
     });
   });
 
+  root.querySelectorAll("[data-delegate-toggle='section']").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (!state.ui.delegateOpen) state.ui.delegateOpen = {};
+      state.ui.delegateOpen[section.id] = !state.ui.delegateOpen[section.id];
+      renderAssessment(assessment);
+    });
+  });
+
   root.querySelectorAll("[data-ai-action]").forEach((btn) => {
     btn.addEventListener("click", async (e) => {
       const [controlId, mode] = e.currentTarget.dataset.aiAction.split(":");
@@ -3645,6 +3909,7 @@ function renderControls(assessment, section) {
     const intro = (document.getElementById("delegateIntro").value || "").trim();
     const selected = Array.from(root.querySelectorAll("[data-delegate-control]:checked")).map((x) => x.dataset.delegateControl);
     if (!name || !title || !email) return toast("Delegate name, title, and email are required.");
+    if (!isValidEmailSyntax(email)) return toast("Enter a valid delegate email address.");
     if (!selected.length) return toast("Select at least one control.");
 
     const delegationId = uid("delegation");
@@ -4142,14 +4407,27 @@ function download(name, type, content) {
 function buildRoadmapCanvas(assessment) {
   const rows = roadmapRows(assessment);
   const timeline = roadmapTimeline(assessment, rows);
-  const items = timeline.items.slice(0, 10);
   const score = weightedScorePercent(assessment);
   const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
   const scenarioLabel = timeline.scenarioLabel;
   const canvas = document.createElement("canvas");
   canvas.width = 1680;
   canvas.height = 1080;
+  const rowHeight = 92;
+  const rowGap = 102;
+  const firstRowY = 250;
+  const bottomPadding = 76;
+  const maxRows = Math.max(4, Math.floor((canvas.height - firstRowY - bottomPadding) / rowGap));
+  const items = timeline.items.slice(0, maxRows);
   const ctx = canvas.getContext("2d");
+  const fitText = (text, maxWidth) => {
+    const raw = `${text || ""}`;
+    if (ctx.measureText(raw).width <= maxWidth) return raw;
+    const ellipsis = "…";
+    let out = raw;
+    while (out.length > 1 && ctx.measureText(out + ellipsis).width > maxWidth) out = out.slice(0, -1);
+    return `${out}${ellipsis}`;
+  };
   ctx.fillStyle = "#f2f7f3";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
@@ -4168,34 +4446,53 @@ function buildRoadmapCanvas(assessment) {
   const axisRight = 1600;
   const axisWidth = axisRight - axisLeft;
   const axisY = 190;
+  const markerMode = timeline.planningWeeks <= 14 ? "week" : "month";
+  const markerStep = markerMode === "week" ? 1 : 4;
+  const timelineBottom = firstRowY + ((items.length - 1) * rowGap) + 30;
   ctx.strokeStyle = "#aec8bd";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(axisLeft, axisY);
   ctx.lineTo(axisRight, axisY);
   ctx.stroke();
+  for (let week = 0; week <= timeline.planningWeeks; week += markerStep) {
+    const x = axisLeft + Math.round((week / timeline.planningWeeks) * axisWidth);
+    ctx.strokeStyle = "#d7e5df";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, axisY + 2);
+    ctx.lineTo(x, timelineBottom);
+    ctx.stroke();
+    const markerDate = addDays(timeline.horizonStart, week * 7);
+    const markerLabel = markerMode === "week"
+      ? `W${week + 1}`
+      : markerDate.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    ctx.fillStyle = "#5a756d";
+    ctx.font = "500 12px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(markerLabel, x - (ctx.measureText(markerLabel).width / 2), axisY - 16);
+  }
   ctx.fillStyle = "#345950";
   ctx.font = "600 16px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText(formatDateShort(timeline.horizonStart), axisLeft, axisY - 12);
   const endLabelWidth = ctx.measureText(formatDateShort(timeline.horizonEnd)).width;
   ctx.fillText(formatDateShort(timeline.horizonEnd), axisRight - endLabelWidth, axisY - 12);
 
-  let y = 250;
+  let y = firstRowY;
   items.forEach((r, i) => {
     const pColor = r.priority === "High" ? "#cc3a3a" : r.priority === "Medium" ? "#c18428" : "#2a8d4a";
     const startX = axisLeft + Math.round((r.startWeekScaled / timeline.planningWeeks) * axisWidth);
     const endX = axisLeft + Math.round((r.endWeekScaled / timeline.planningWeeks) * axisWidth);
     ctx.fillStyle = "#fff";
-    ctx.fillRect(40, y - 30, 1560, 92);
+    ctx.fillRect(40, y - 30, 1560, rowHeight);
     ctx.strokeStyle = "#d0dfd8";
-    ctx.strokeRect(40, y - 30, 1560, 92);
+    ctx.strokeRect(40, y - 30, 1560, rowHeight);
     ctx.fillStyle = "#18322e";
     ctx.font = "700 21px 'Avenir Next', 'Segoe UI', sans-serif";
-    ctx.fillText(`${i + 1}. ${r.control}`, 56, y - 2);
+    ctx.fillText(fitText(`${i + 1}. ${r.control}`, 760), 56, y - 2);
     ctx.font = "500 17px 'Avenir Next', 'Segoe UI', sans-serif";
     ctx.fillStyle = "#5b766f";
-    ctx.fillText(`${r.clause} | Owner: ${r.owner}`, 56, y + 24);
-    ctx.fillText(`${r.startLabel} -> ${r.endLabel} (${r.timeframe})`, 56, y + 46);
+    ctx.fillText(fitText(`${r.clause} | Owner: ${r.owner}`, 760), 56, y + 24);
+    ctx.fillText(fitText(`${r.startLabel} -> ${r.endLabel} (${r.timeframe})`, 760), 56, y + 46);
     ctx.fillStyle = "#eef4f1";
     ctx.fillRect(axisLeft, y + 8, axisWidth, 18);
     ctx.fillStyle = pColor;
@@ -4203,12 +4500,33 @@ function buildRoadmapCanvas(assessment) {
     ctx.fillStyle = pColor;
     ctx.font = "700 15px 'Avenir Next', 'Segoe UI', sans-serif";
     ctx.fillText(`${r.priority}${r.criticalPath ? " | critical path" : ""}`, axisRight + 10, y + 23);
-    y += 102;
+    y += rowGap;
   });
   ctx.fillStyle = "#4f6b63";
   ctx.font = "500 15px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText(`Constraint notes: ${timeline.constraintNotes}${timeline.compressed ? " | Timeline compressed to fit selected horizon." : ""}`, 54, canvas.height - 24);
   return canvas;
+}
+
+function roadmapRulerMarkers(timeline) {
+  const mode = timeline.planningWeeks <= 14 ? "week" : "month";
+  const stepWeeks = mode === "week" ? 1 : 4;
+  const markers = [];
+  for (let week = 0; week <= timeline.planningWeeks; week += stepWeeks) {
+    const pct = Math.max(0, Math.min(100, (week / timeline.planningWeeks) * 100));
+    const d = addDays(timeline.horizonStart, week * 7);
+    const label = mode === "week"
+      ? `W${week + 1}`
+      : d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    markers.push({ pct, label });
+  }
+  if (!markers.length || markers[markers.length - 1].pct < 99.9) {
+    markers.push({
+      pct: 100,
+      label: formatDateShort(timeline.horizonEnd)
+    });
+  }
+  return { mode, markers };
 }
 
 function maturityDimensionRows(assessment) {
@@ -4597,8 +4915,10 @@ function renderFinal(assessment) {
   const actionRowsForAudience = actionPlan;
   const timelineById = Object.fromEntries(timeline.items.map((x) => [x.id, x]));
   const generatedAt = new Date().toLocaleString();
+  const generatedDate = new Date().toLocaleDateString();
   const preparedFor = state.profile?.name || "User";
   const orgDisplay = assessment.data.context?.orgName || "Organisation";
+  const reportDisclaimer = "Disclaimer: This report is based on information provided by the user and is not intended to provide conclusive findings or recommendations. It should be used as the starting point for deeper analysis, discussion, and planning.";
   const complianceChartDataUrl = buildComplianceDonutCanvas(compliant, total, 420).toDataURL("image/png");
   const sectionBarsDataUrl = buildSectionMaturityBarsCanvas(assessment, 980, 430).toDataURL("image/png");
   const roadmapCanvasForExport = buildRoadmapCanvas(assessment);
@@ -4670,18 +4990,21 @@ function renderFinal(assessment) {
             padding: 1.2cm;
             min-height: 20cm;
           }
+          .cover h1, .cover h2, .cover h3, .cover p { color: #ffffff !important; }
           .cover h1 { margin: 0 0 0.2cm; font-size: 26pt; }
           .cover h2 { margin: 0 0 0.5cm; font-size: 15pt; font-weight: 600; }
           .cover p { margin: 0.14cm 0; line-height: 1.45; }
           .body { padding: 0.6cm 0.2cm 0.3cm; }
+          .body h1, .body h2, .body h3 { color: #12342f !important; }
+          h1 { color: #12342f; }
           h2 {
             margin: 0.7cm 0 0.28cm;
             font-size: 15pt;
-            color: var(--doc-accent);
+            color: #12342f;
             border-bottom: 1px solid var(--doc-line);
             padding-bottom: 0.12cm;
           }
-          h3 { margin: 0.35cm 0 0.18cm; font-size: 11.5pt; color: var(--doc-text); }
+          h3 { margin: 0.35cm 0 0.18cm; font-size: 11.5pt; color: #12342f; }
           p, li, td, th { font-size: 10.5pt; line-height: 1.45; }
           ul, ol { margin: 0.18cm 0 0.24cm 0.5cm; }
           .toc, .note, .card {
@@ -4736,6 +5059,7 @@ function renderFinal(assessment) {
           .small { font-size: 9pt; color: var(--doc-muted); }
           .break-after { page-break-after: always; }
           .page-no::after { content: counter(page); }
+          .page-total::after { content: counter(pages); }
           @media (max-width: 900px) {
             .kpi { grid-template-columns: 1fr 1fr; }
             .viz-grid { grid-template-columns: 1fr; }
@@ -4745,14 +5069,13 @@ function renderFinal(assessment) {
       <body>
         <div class="doc-header">
           <div class="doc-row">
-            <div><strong>${escapeHtml(reportName)}</strong> - ${escapeHtml(orgDisplay)}</div>
-            <div>Prepared for: ${escapeHtml(preparedFor)}</div>
+            <div><strong>Align42 Assessment for ${escapeHtml(orgDisplay)}</strong></div>
           </div>
         </div>
         <div class="doc-footer">
           <div class="doc-row">
-            <div>${escapeHtml(generatedAt)}</div>
-            <div>Page <span class="page-no"></span></div>
+            <div>Prepared by ${escapeHtml(preparedFor)} on ${escapeHtml(generatedDate)}</div>
+            <div>Page <span class="page-no"></span> of <span class="page-total"></span></div>
           </div>
         </div>
         <main class="doc-main">${innerHtml}</main>
@@ -4773,6 +5096,9 @@ function renderFinal(assessment) {
             <p class="meta"><strong>Generated:</strong> ${escapeHtml(generatedAt)}<br><strong>Prepared by:</strong> Align42 Assessment Assistant</p>
           </div>
           <div class="body">
+            <div class="note">
+              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            </div>
             <h2>Table of Contents</h2>
             <div class="toc">
               <ol>
@@ -4876,6 +5202,9 @@ function renderFinal(assessment) {
             <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
           <div class="body" style="padding:20px 26px;">
+            <div class="note">
+              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            </div>
             <p><span class="icon-chip">[Summary]</span><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
             <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
@@ -4903,6 +5232,9 @@ function renderFinal(assessment) {
             <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
           <div class="body" style="padding:22px 28px;">
+            <div class="note">
+              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            </div>
             <h2>Sample Executive Summary</h2>
             <p>This sample report demonstrates a low-maturity/high-ambition scenario for a mid-sized Australian technology manufacturer. The current control baseline is early-stage, while strategic ambition requires rapid formalization of governance, risk, and operational assurance controls.</p>
             <ul>
@@ -4932,6 +5264,9 @@ function renderFinal(assessment) {
             <p style="margin:0;"><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
           <div class="body" style="padding:22px 30px;">
+            <div class="note">
+              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            </div>
             <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
             <table style="width:100%; border-collapse:collapse; margin-top:10px;">
               <tr>
@@ -5043,9 +5378,10 @@ function renderRoadmap(assessment) {
   const constraintNarrative = `${timeline.constraintNotes}${timeline.compressed ? " Timeline has been compressed to fit the selected horizon." : ""}`;
   const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
   const timelineRows = timeline.items.slice(0, 16);
+  const ruler = roadmapRulerMarkers(timeline);
   const roadmapDataUrl = buildRoadmapCanvas(assessment).toDataURL("image/png");
   const demoSampleRoadmapHtml = () => `
-    <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px;">
+    <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px; max-width:1000px; box-sizing:border-box; overflow-wrap:anywhere; word-break:break-word;">
       <h1>Align42 Demo Sample Roadmap</h1>
       <p><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
       <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
@@ -5088,6 +5424,12 @@ function renderRoadmap(assessment) {
       <div class="timeline-axis-point"><span class="k">Start</span><strong>${escapeHtml(formatDateShort(timeline.horizonStart))}</strong></div>
       <div class="timeline-axis-point"><span class="k">Midpoint</span><strong>${escapeHtml(formatDateShort(addDays(timeline.horizonStart, Math.floor((timeline.planningWeeks * 7) / 2))))}</strong></div>
       <div class="timeline-axis-point"><span class="k">Horizon End</span><strong>${escapeHtml(formatDateShort(timeline.horizonEnd))}</strong></div>
+    </div>
+    <div class="timeline-ruler-wrap">
+      <p class="hint" style="margin:0 0 0.4rem;"><strong>Timeline markers:</strong> ${ruler.mode === "week" ? "Weekly" : "Monthly"} intervals</p>
+      <div class="timeline-ruler">
+        ${ruler.markers.map((m) => `<span class="timeline-ruler-marker" style="left:${m.pct.toFixed(2)}%;"><em>${escapeHtml(m.label)}</em></span>`).join("")}
+      </div>
     </div>
 
     <div class="timeline-shell">
@@ -5144,12 +5486,12 @@ function renderRoadmap(assessment) {
   });
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
     const html = `
-      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px;">
+      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px; max-width:1000px; box-sizing:border-box; overflow-wrap:anywhere; word-break:break-word;">
         <h1>Align42 Compliance Readiness Roadmap</h1>
         <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
         <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
-        <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
+        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Markers:</strong> ${timeline.planningWeeks <= 14 ? "Weekly" : "Monthly"}</p>
+        <img src="${roadmapDataUrl}" style="width:100%; max-width:100%; height:auto; border:1px solid #d5e4dc; border-radius:10px; display:block;" />
       </body></html>
     `;
     download("align42-roadmap.ppt", "application/vnd.ms-powerpoint", html);
@@ -5158,12 +5500,12 @@ function renderRoadmap(assessment) {
     const w = window.open("", "_blank");
     if (!w) return;
     w.document.write(`
-      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px;">
+      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px; max-width:1000px; box-sizing:border-box; overflow-wrap:anywhere; word-break:break-word;">
         <h1>Align42 Compliance Readiness Roadmap</h1>
         <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
         <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)}</p>
-        <img src="${roadmapDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:10px;" />
+        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Markers:</strong> ${timeline.planningWeeks <= 14 ? "Weekly" : "Monthly"}</p>
+        <img src="${roadmapDataUrl}" style="width:100%; max-width:100%; height:auto; border:1px solid #d5e4dc; border-radius:10px; display:block;" />
       </body></html>
     `);
     w.document.close();
@@ -5206,3 +5548,4 @@ function bindNav(assessment) {
 }
 
 render();
+void bootstrapSecureState();
