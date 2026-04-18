@@ -1,0 +1,28 @@
+name: Local Data Guard
+
+on:
+  push:
+    branches:
+      - main
+      - 'codex/**'
+  pull_request:
+
+jobs:
+  block-local-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Fail if local-only artifacts are tracked
+        shell: bash
+        run: |
+          set -euo pipefail
+          BLOCKED_REGEX='^(iso42001\.db|dist/|uploads/|\.DS_Store$)'
+          MATCHES="$(git ls-files | grep -E "$BLOCKED_REGEX" || true)"
+          if [[ -n "$MATCHES" ]]; then
+            echo 'Repository contains tracked local-only artifacts:'
+            printf '%s\n' "$MATCHES"
+            exit 1
+          fi
+          echo 'No tracked local-only artifacts detected.'
