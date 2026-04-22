@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PORT=3000
 
-WORKDIR /app
+WORKDIR /app/Align42
 
 RUN addgroup --system align42 && adduser --system --ingroup align42 align42
 
