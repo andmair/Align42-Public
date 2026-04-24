@@ -17,7 +17,7 @@ Open the app directly in your browser:
 open Align42.html
 ```
 
-For better AI-provider compatibility, you can also run the local server:
+For better AI-provider compatibility, you can also run the bundled local web server:
 
 ```bash
 python3 server.py
@@ -26,6 +26,10 @@ python3 server.py
 Then open:
 
 `http://localhost:8000/Align42.html`
+
+The bundled local server serves static app files only.
+User profile, settings, and assessment data are stored locally in the browser with encrypted-at-rest persistence.
+Align42 does not use server-side database persistence.
 
 ### Option 2: Docker run
 
@@ -120,3 +124,4 @@ Standalone browser test page:
 
 - File attachments in responses are stored as local metadata references in the browser state.
 - Clearing browser storage will remove saved assessments and settings.
+- The legacy SQLite persistence path has been removed from the supported runtime.

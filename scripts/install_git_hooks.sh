@@ -13,7 +13,7 @@ cat > "$HOOK_DIR/pre-commit" <<'HOOK'
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
-BLOCKED_REGEX='^(iso42001\.db|dist/|uploads/|\.DS_Store$)'
+BLOCKED_REGEX='^(iso42001\.db|dist/|\.DS_Store$)'
 STAGED="$(git diff --cached --name-only)"
 if printf '%s
 ' "$STAGED" | grep -Eq "$BLOCKED_REGEX"; then

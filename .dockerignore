@@ -8,6 +8,5 @@ __pycache__
 .DS_Store
 .vscode
 .idea
-uploads
 .pytest_cache
 *.log

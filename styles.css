@@ -105,6 +105,16 @@ body {
   gap: 0.5rem;
 }
 
+.user-summary {
+  font-size: 0.86rem;
+  color: var(--muted);
+  align-self: center;
+  max-width: 280px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  text-align: right;
+}
+
 .topbar > * {
   min-width: 0;
 }

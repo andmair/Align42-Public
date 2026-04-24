@@ -451,6 +451,15 @@ function normalizedProfile(profile) {
   };
 }
 
+function profileHeaderSummary() {
+  const name = `${state.profile?.name || ""}`.trim();
+  const email = `${state.profile?.email || ""}`.trim();
+  if (!name && !email) return "Profile not set";
+  if (!name) return email;
+  if (!email) return name;
+  return `${name} (${email})`;
+}
+
 function isValidEmailSyntax(value) {
   const email = `${value || ""}`.trim();
   if (!email) return false;
@@ -2423,9 +2432,10 @@ function renderDelegationsPage(assessment) {
       <header class="topbar">
         <div class="brand">
           <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>Delegations Audit Trail</h1><span class="meta-pill">Audit log</span></div>
-          <p>${escapeHtml(assessment.title)} | ${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
+          <p>${escapeHtml(assessment.title)}</p>
         </div>
         <div class="actions">
+          <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn secondary" id="refreshDelegationsBtn">↻ Refresh</button>
           <button class="btn ghost" id="backToAssessmentBtn">← Back to Assessment</button>
@@ -2651,10 +2661,10 @@ function renderWelcome() {
       <header class="topbar">
         <div class="brand">
           <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><span class="meta-pill">${mode === "advanced" ? "Advanced mode" : "Simple mode"}</span>${mode === "advanced" ? `<span class="meta-pill ${aiMode ? "ok-pill" : ""}">${aiMode ? "AI on" : "AI off"}</span>` : ""}</div>
-          <p>${escapeHtml(state.profile?.name || "Profile not set")} (${escapeHtml(state.profile?.email || "email not set")})</p>
           ${state.profile?.role ? `<p class="hint" style="margin-top:0.2rem;">Role: ${escapeHtml(state.profile.role)}</p>` : ""}
         </div>
         <div class="actions">
+          <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
           ${mode === "simple" ? `<button class="btn secondary" id="demoAssessmentBtn">🧪 Demo Assessment</button>` : ""}
@@ -3048,9 +3058,9 @@ function renderAssessment(assessment) {
       <header class="topbar">
         <div class="brand">
           <div class="brand-row"><img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" /><button class="btn ghost small" id="homeBtn">Home</button><h1>${escapeHtml(assessment.title)}</h1><span class="meta-pill">Step ${assessment.data.currentSection + 1}/${sections.length}</span>${section.type === "controls" && sectionDelegation.pendingControls > 0 ? `<span class="meta-pill pending">Pending feedback: ${sectionDelegation.pendingControls}</span>` : ""}</div>
-          <p>${escapeHtml(state.profile?.name || "Local user")} (${escapeHtml(state.profile?.email || "email not set")})</p>
         </div>
         <div class="actions">
+          <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <button class="btn secondary" id="delegationsBtn">📋 Delegations</button>
           <button class="btn secondary" id="saveBtn">💾 Save</button>
