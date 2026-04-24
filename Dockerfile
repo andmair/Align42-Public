@@ -1,8 +1,8 @@
-FROM python:3.12-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8000
+FROM python:3.11-slim
 
 WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8000
 
 RUN addgroup --system align42 && adduser --system --ingroup align42 align42
 
@@ -14,4 +14,4 @@ USER align42
 
 EXPOSE 8000
 
-CMD ["python3", "server.py"]
+CMD ["python", "server.py"]
