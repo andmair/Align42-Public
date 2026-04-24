@@ -325,12 +325,12 @@ textarea {
   border: 1px solid var(--line);
   border-radius: 11px;
   background: #f8fcfa;
-  padding: 0.75rem 0.85rem;
-  min-height: 88px;
+  padding: 0.62rem 0.72rem;
+  min-height: 74px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.9rem;
+  gap: 0.7rem;
 }
 
 .metric-label {
@@ -343,7 +343,7 @@ textarea {
 
 .metric-value {
   color: #17332d;
-  font-size: 2rem;
+  font-size: 1.7rem;
   line-height: 1;
   font-weight: 800;
   flex: 0 0 auto;
@@ -577,6 +577,20 @@ textarea {
   color: #16453b;
 }
 
+.welcome-home label {
+  color: #254940;
+  font-weight: 600;
+}
+
+.welcome-home .metric-label {
+  color: #36584f;
+  font-weight: 700;
+}
+
+.welcome-home .metric-value {
+  color: #112e28;
+}
+
 .welcome-home .question-focus h3 {
   color: #1d5a4b;
 }
@@ -587,6 +601,18 @@ textarea {
 
 .welcome-home .assessment-row h3 {
   color: #23483f;
+}
+
+.welcome-home .hint,
+.welcome-home .assessment-row p,
+.welcome-home .user-summary,
+.welcome-home .brand p {
+  color: #45625b;
+}
+
+.welcome-home .list-head .meta-pill,
+.welcome-home .brand-row .meta-pill {
+  color: #1b5e4d;
 }
 
 .welcome-home .question-focus {
@@ -1206,7 +1232,7 @@ a {
   }
 
   .metric-card {
-    min-height: 84px;
+    min-height: 70px;
   }
 
   .assessment-row {
@@ -1275,7 +1301,7 @@ a {
   }
 
   .metric-value {
-    font-size: 1.6rem;
+    font-size: 1.45rem;
   }
 
   .nav {
