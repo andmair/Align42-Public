@@ -2675,25 +2675,6 @@ function renderWelcome() {
             <p class="hint">Your details and saved assessments have been cleared from the current UI and in-memory cache. Local saved data is still retained on this device in the background.</p>
           </div>
         ` : ""}
-        ${showProfileEditor ? `
-          <div class="question">
-            <h3>${hasProfile ? "Edit Profile" : "Set Up Your Profile"}</h3>
-            <p class="hint">Enter your details to start or open assessments. All profile fields are shown here together.</p>
-            <div class="row">
-              <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" value="${escapeHtml(state.profile?.name || "")}" /></label>
-              <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" value="${escapeHtml(state.profile?.email || "")}" /></label>
-            </div>
-            <label style="margin-top:0.6rem;">Role<input id="profileRole" type="text" placeholder="Example: Risk Manager" value="${escapeHtml(state.profile?.role || "")}" /></label>
-            <div class="actions" style="margin-top:0.7rem;">
-              <button class="btn primary" id="saveProfileBtn">Save Profile</button>
-              ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close Profile</button>` : ""}
-              ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
-              ${hasProfile ? `<button class="btn ghost" id="deleteProfileBtn">Delete Profile</button>` : ""}
-            </div>
-            ${hasProfile ? `<p class="hint" style="margin-top:0.55rem;"><strong>Warning:</strong> Deleting your profile will also delete all profile details, saved assessments, AI settings, and other data stored locally on this device. Download any assessment results you need before continuing.</p>
-            <label style="margin-top:0.45rem;">Type DELETE to confirm permanent local deletion<input id="deleteProfileConfirm" type="text" placeholder="DELETE" /></label>` : ""}
-          </div>
-         ` : ""}
         <div class="question">
           <h3>Assessment Mode</h3>
           <p class="hint"><strong>Select your assessment mode before you start.</strong> Simple mode is optimized for generalists, while Advanced mode supports deeper specialist scoring and richer analysis.</p>
@@ -2789,6 +2770,23 @@ function renderWelcome() {
             <p class="hint">Choose session-only storage for stronger local key hygiene.</p>
           </div>
         </div>
+        ${showProfileEditor ? `
+          <div class="question">
+            <h3>${hasProfile ? "Edit Profile" : "Set Up Your Profile"}</h3>
+            <p class="hint">Enter your details to start or open assessments. All profile fields are shown here together.</p>
+            <div class="row">
+              <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" value="${escapeHtml(state.profile?.name || "")}" /></label>
+              <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" value="${escapeHtml(state.profile?.email || "")}" /></label>
+            </div>
+            <label style="margin-top:0.6rem;">Role<input id="profileRole" type="text" placeholder="Example: Risk Manager" value="${escapeHtml(state.profile?.role || "")}" /></label>
+            <div class="actions" style="margin-top:0.7rem;">
+              <button class="btn primary" id="saveProfileBtn">Save Profile</button>
+              ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close Profile</button>` : ""}
+              ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
+              ${hasProfile ? `<button class="btn ghost" id="deleteProfileBtn">Delete Profile</button>` : ""}
+            </div>
+          </div>
+         ` : ""}
         </div>
 
         <div class="list-head">
@@ -2875,13 +2873,13 @@ function renderWelcome() {
     toast("Logged out. Local saved data has been hidden from this session.");
   });
   document.getElementById("deleteProfileBtn")?.addEventListener("click", async () => {
-    const typed = (document.getElementById("deleteProfileConfirm")?.value || "").trim();
-    if (typed !== "DELETE") {
-      toast("Type DELETE to confirm profile deletion.");
-      return;
-    }
     const confirmed = window.confirm("Delete profile and all locally stored assessment data on this device? Download any assessment results you need before continuing.");
     if (!confirmed) return;
+    const typed = (window.prompt("Type DELETE to confirm permanent local deletion.") || "").trim();
+    if (typed !== "DELETE") {
+      toast("Profile deletion cancelled. Type DELETE to confirm.");
+      return;
+    }
     await deleteProfileAndLocalData();
     render();
     toast("Profile and local data deleted from this device.");

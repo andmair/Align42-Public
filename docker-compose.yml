@@ -5,7 +5,20 @@ services:
       dockerfile: Dockerfile
     image: align42:local
     ports:
-      - "3000:3000"
+      - "8000:8000"
     environment:
-      PORT: "3000"
+      PORT: "8000"
+    volumes:
+      - .:/app
+      - /app/__pycache__
+      - /app/uploads
     restart: unless-stopped
+    develop:
+      watch:
+        - action: sync
+          path: .
+          target: /app
+          ignore:
+            - uploads
+            - __pycache__
+            - .git

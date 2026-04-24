@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ENV PYTHONDONTWRITEBYTECODE=1     PYTHONUNBUFFERED=1     PORT=3000
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8000
 
 WORKDIR /app
 
@@ -12,6 +12,6 @@ RUN mkdir -p /app/uploads && chown -R align42:align42 /app
 
 USER align42
 
-EXPOSE 3000
+EXPOSE 8000
 
 CMD ["python3", "server.py"]
