@@ -2672,7 +2672,7 @@ function renderWelcome() {
         </div>
       </header>
 
-      <div class="container card content">
+      <div class="container card content welcome-home">
         <div class="welcome-metrics">
           <div class="metric-card"><div class="metric-label">Saved assessments</div><div class="metric-value">${rows.length}</div></div>
           <div class="metric-card"><div class="metric-label">In progress</div><div class="metric-value">${inProgressCount}</div></div>
