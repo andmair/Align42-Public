@@ -2858,7 +2858,6 @@ function renderWelcome() {
   });
 
   document.getElementById("demoAssessmentBtn")?.addEventListener("click", () => {
-    if (!hasProfile) return toast("Set your profile name and email first.");
     if (assessmentMode() !== "simple") return toast("Demo assessment is available in Simple mode.");
     const assessment = createSimpleModeDemoAssessment();
     state.assessments.push(assessment);
