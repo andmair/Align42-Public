@@ -32,13 +32,14 @@ class TestRoadmapAndReportRegression(unittest.TestCase):
         self.assertIn("Tailored for geography:", src)
         self.assertIn("Tailored for sector:", src)
 
-    def test_report_moves_roadmap_chart_to_landscape_appendix(self):
+    def test_report_excludes_roadmap_appendix_from_full_report(self):
         src = self.source
-        self.assertIn("@page roadmap-landscape", src)
-        self.assertIn(".appendix-roadmap.landscape", src)
-        self.assertIn("Detailed roadmap chart is provided in Appendix A in landscape format", src)
-        self.assertIn("Appendix A: Detailed Roadmap Timeline (Landscape)", src)
-        self.assertIn("timeline-img timeline-img-appendix", src)
+        self.assertNotIn("@page roadmap-landscape", src)
+        self.assertNotIn(".appendix-roadmap.landscape", src)
+        self.assertNotIn("Detailed roadmap chart is provided in Appendix A in landscape format", src)
+        self.assertNotIn("Appendix A: Detailed Roadmap Timeline (Landscape)", src)
+        self.assertNotIn("timeline-img timeline-img-appendix", src)
+        self.assertIn("<h2>Roadmap Timeline</h2>", src)
 
     def test_roadmap_timeline_has_week_or_month_markers(self):
         src = self.source

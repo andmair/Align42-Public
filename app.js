@@ -4985,7 +4985,7 @@ function renderFinal(assessment) {
   const generatedDate = new Date().toLocaleDateString();
   const preparedFor = state.profile?.name || "User";
   const orgDisplay = assessment.data.context?.orgName || "Organisation";
-  const reportDisclaimer = "Disclaimer: This report is based on information provided by the user and is not intended to provide conclusive findings or recommendations. It should be used as the starting point for deeper analysis, discussion, and planning.";
+  const reportDisclaimer = "This report is based on information provided by the user and is not intended to provide conclusive findings or recommendations. It should be used as the starting point for deeper analysis, discussion, and planning.";
   const complianceChartDataUrl = buildComplianceDonutCanvas(compliant, total, 420).toDataURL("image/png");
   const sectionBarsDataUrl = buildSectionMaturityBarsCanvas(assessment, 980, 430).toDataURL("image/png");
   const roadmapCanvasForExport = buildRoadmapCanvas(assessment);
@@ -4997,7 +4997,15 @@ function renderFinal(assessment) {
     <html>
       <head>
         <style>
-          @page { size: A4; margin: 2cm; }
+          @page WordSection1 {
+            size: A4;
+            margin: 2cm;
+            mso-title-page: yes;
+            mso-header: h1;
+            mso-footer: f1;
+            mso-first-header: fh1;
+            mso-first-footer: ff1;
+          }
           :root {
             --doc-text: #16312b;
             --doc-muted: #4a635d;
@@ -5019,20 +5027,18 @@ function renderFinal(assessment) {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
-          .doc-header, .doc-footer {
-            position: fixed;
-            left: 0;
-            right: 0;
+          .WordSection1 {
+            page: WordSection1;
+          }
+          .doc-header, .doc-footer, .doc-first-header, .doc-first-footer {
             color: var(--doc-muted);
             font-size: 10pt;
           }
-          .doc-header {
-            top: 0;
+          .doc-header, .doc-first-header {
             padding: 0 2cm 0.35cm;
             border-bottom: 1px solid var(--doc-line);
           }
-          .doc-footer {
-            bottom: 0;
+          .doc-footer, .doc-first-footer {
             padding: 0.35cm 2cm 0;
             border-top: 1px solid var(--doc-line);
           }
@@ -5043,8 +5049,8 @@ function renderFinal(assessment) {
             align-items: center;
           }
           .doc-main {
-            padding-top: 1.2cm;
-            padding-bottom: 1.1cm;
+            padding-top: 0;
+            padding-bottom: 0;
           }
           .page {
             max-width: 17cm;
@@ -5052,15 +5058,77 @@ function renderFinal(assessment) {
             background: var(--doc-surface);
           }
           .cover {
-            background: linear-gradient(135deg, #005a4f, #0b7668);
-            color: #ffffff;
-            padding: 1.2cm;
+            background: linear-gradient(135deg, #dcece6 0%, #eef5f1 58%, #f4eadf 100%);
+            color: var(--doc-text);
+            border: 1px solid #bfd2ca;
+            border-radius: 14px;
+            padding: 1.3cm 1.25cm;
             min-height: 20cm;
+            position: relative;
+            overflow: hidden;
           }
-          .cover h1, .cover h2, .cover h3, .cover p { color: #ffffff !important; }
-          .cover h1 { margin: 0 0 0.2cm; font-size: 26pt; }
-          .cover h2 { margin: 0 0 0.5cm; font-size: 15pt; font-weight: 600; }
+          .cover::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+              radial-gradient(circle at top right, rgba(0, 90, 79, 0.16), transparent 34%),
+              radial-gradient(circle at left bottom, rgba(196, 128, 51, 0.14), transparent 38%);
+            pointer-events: none;
+          }
+          .cover > * { position: relative; z-index: 1; }
+          .cover-kicker {
+            display: inline-block;
+            margin-bottom: 0.35cm;
+            padding: 0.08cm 0.22cm;
+            border-radius: 999px;
+            background: rgba(0, 90, 79, 0.1);
+            color: #0d594b;
+            font-size: 9.5pt;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+          }
+          .cover h1, .cover h2, .cover h3, .cover p { color: var(--doc-text) !important; }
+          .cover h1 { margin: 0 0 0.18cm; font-size: 30pt; line-height: 1.05; }
+          .cover h2 {
+            margin: 0 0 0.65cm;
+            font-size: 17pt;
+            font-weight: 700;
+            color: #145347 !important;
+            border-bottom: none;
+            padding-bottom: 0;
+          }
           .cover p { margin: 0.14cm 0; line-height: 1.45; }
+          .cover-meta {
+            margin-top: 0.55cm;
+            padding: 0.35cm 0.4cm;
+            border: 1px solid #c8d8d2;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.62);
+            max-width: 10.8cm;
+          }
+          .cover-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.18cm 0.35cm;
+            margin-top: 0.55cm;
+            max-width: 11.6cm;
+          }
+          .cover-card {
+            border: 1px solid #c8d8d2;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.68);
+            padding: 0.26cm 0.3cm;
+          }
+          .cover-card strong {
+            display: block;
+            font-size: 8.8pt;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #47625b;
+            margin-bottom: 0.08cm;
+          }
           .body { padding: 0.6cm 0.2cm 0.3cm; }
           .body h1, .body h2, .body h3 { color: #12342f !important; }
           h1 { color: #12342f; }
@@ -5079,6 +5147,27 @@ function renderFinal(assessment) {
             border-radius: 10px;
             background: #fbfcfc;
             padding: 0.28cm 0.32cm;
+          }
+          .disclaimer-box {
+            border: 1px solid #d8c9b5;
+            border-left: 5px solid #b97a2f;
+            border-radius: 12px;
+            background: linear-gradient(180deg, #fdf7f1 0%, #f7ecdf 100%);
+            padding: 0.3cm 0.34cm;
+            margin-bottom: 0.35cm;
+          }
+          .disclaimer-title {
+            display: inline-block;
+            margin-bottom: 0.12cm;
+            color: #7a4f1d;
+            font-size: 8.8pt;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+          }
+          .disclaimer-box p {
+            margin: 0;
+            color: #4e4030;
           }
           .kpi {
             display: grid;
@@ -5127,43 +5216,62 @@ function renderFinal(assessment) {
             color: var(--doc-accent);
             margin-right: 0.14cm;
           }
-          table { width: 100%; border-collapse: collapse; margin-top: 0.22cm; }
-          th, td { border: 1px solid var(--doc-line); padding: 0.14cm; text-align: left; vertical-align: top; }
-          th { background: var(--doc-accent-soft); }
+          table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 0.22cm;
+            border: 1px solid var(--doc-line);
+            border-radius: 10px;
+            overflow: hidden;
+            background: #ffffff;
+          }
+          th, td {
+            border-right: 1px solid var(--doc-line);
+            border-bottom: 1px solid var(--doc-line);
+            padding: 0.16cm 0.18cm;
+            text-align: left;
+            vertical-align: top;
+          }
+          th:last-child, td:last-child { border-right: 0; }
+          tr:last-child td { border-bottom: 0; }
+          th {
+            background: #deeee8;
+            color: #15483d;
+            font-weight: 700;
+          }
+          tbody tr:nth-child(odd) td { background: #fbfdfc; }
+          tbody tr:nth-child(even) td { background: #f1f7f4; }
+          tbody tr:nth-child(even) td:nth-child(odd) { background: #edf5f1; }
           .small { font-size: 9pt; color: var(--doc-muted); }
           .break-after { page-break-after: always; }
           .break-before { page-break-before: always; }
-          .appendix-roadmap {
-            page-break-before: always;
-          }
           .page-no::after { content: counter(page); }
           .page-total::after { content: counter(pages); }
-          @page roadmap-landscape {
-            size: A4 landscape;
-            margin: 1.6cm;
-          }
-          .appendix-roadmap.landscape {
-            page: roadmap-landscape;
-          }
           @media (max-width: 900px) {
             .kpi { grid-template-columns: 1fr 1fr; }
             .viz-grid { grid-template-columns: 1fr; }
+            .cover-grid { grid-template-columns: 1fr; max-width: none; }
           }
         </style>
       </head>
       <body>
-        <div class="doc-header">
+        <div style="mso-element:header" id="h1" class="doc-header">
           <div class="doc-row">
             <div><strong>Align42 Assessment for ${escapeHtml(orgDisplay)}</strong></div>
           </div>
         </div>
-        <div class="doc-footer">
+        <div style="mso-element:footer" id="f1" class="doc-footer">
           <div class="doc-row">
             <div>Prepared by ${escapeHtml(preparedFor)} on ${escapeHtml(generatedDate)}</div>
             <div>Page <span class="page-no"></span> of <span class="page-total"></span></div>
           </div>
         </div>
-        <main class="doc-main">${innerHtml}</main>
+        <div style="mso-element:header" id="fh1" class="doc-first-header"></div>
+        <div style="mso-element:footer" id="ff1" class="doc-first-footer"></div>
+        <div class="WordSection1">
+          <main class="doc-main">${innerHtml}</main>
+        </div>
       </body>
     </html>
   `;
@@ -5171,18 +5279,25 @@ function renderFinal(assessment) {
   const reportHtml = () => documentShell("ISO 42001 Readiness Assessment Report", `
         <div class="page">
           <div class="cover break-after">
+            <div class="cover-kicker">ISO 42001 Compliance Assessment</div>
             <h1>Align42</h1>
             <h2>ISO 42001 Readiness Assessment Report</h2>
             <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
             <p><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
             <p><strong>Organisation:</strong> ${escapeHtml(orgDisplay)}</p>
-            <p><strong>Audience Mode:</strong> ${escapeHtml(audienceLabel)}</p>
-            <p><strong>Report Purpose:</strong> Provide a clear view of current maturity, key risks, and a prioritized plan to improve ISO 42001 readiness.</p>
-            <p class="meta"><strong>Generated:</strong> ${escapeHtml(generatedAt)}<br><strong>Prepared by:</strong> Align42 Assessment Assistant</p>
+            <div class="cover-grid">
+              <div class="cover-card"><strong>Audience Mode</strong>${escapeHtml(audienceLabel)}</div>
+              <div class="cover-card"><strong>Generated</strong>${escapeHtml(generatedAt)}</div>
+            </div>
+            <div class="cover-meta">
+              <p><strong>Report purpose:</strong> Provide a clear view of current maturity, key risks, and a prioritized plan to improve ISO 42001 readiness.</p>
+              <p><strong>Prepared by:</strong> Align42 Assessment Assistant</p>
+            </div>
           </div>
           <div class="body">
-            <div class="note">
-              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            <div class="disclaimer-box">
+              <div class="disclaimer-title">Disclaimer</div>
+              <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
             <h2>Table of Contents</h2>
             <div class="toc">
@@ -5253,7 +5368,6 @@ function renderFinal(assessment) {
               <div class="card"><div class="label">Horizon</div><div class="value" style="font-size:16px;">${escapeHtml(horizonSummary)}</div></div>
             </div>
             <p><strong>Constraint notes:</strong> ${escapeHtml(constraintNarrative)}</p>
-            <p class="small">Detailed roadmap chart is provided in Appendix A in landscape format to preserve readability on A4 exports.</p>
             <table>
               <tr><th>#</th><th>Control</th><th>Priority</th><th>Owner</th><th>Start</th><th>Finish</th><th>Dependency Summary</th></tr>
               ${timelineRows.map((r, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(r.control)}</td><td>${escapeHtml(r.priority)}${r.criticalPath ? " (critical path)" : ""}</td><td>${escapeHtml(r.owner)}</td><td>${escapeHtml(r.startLabel)}</td><td>${escapeHtml(r.endLabel)}</td><td>${escapeHtml(r.dependency)}</td></tr>`).join("")}
@@ -5275,12 +5389,6 @@ function renderFinal(assessment) {
               <tr><th>ISO 42001 Dimension</th><th>Average Maturity</th><th>Compliant Controls</th><th>Interpretation</th></tr>
               ${sectionRows.map((s) => `<tr><td>${escapeHtml(s.section)}</td><td>${s.average.toFixed(1)}/5</td><td>${s.compliantCount}/${s.totalControls}</td><td>${escapeHtml(s.average >= 4 ? "At or near expected readiness threshold." : s.average >= 3 ? "Partially established; strengthen repeatability and evidence." : "Requires foundational uplift and clear ownership.")}</td></tr>`).join("")}
             </table>
-
-            <div class="appendix-roadmap landscape break-before">
-              <h2>Appendix A: Detailed Roadmap Timeline (Landscape)</h2>
-              <p class="small">This appendix presents the full timeline in landscape orientation to ensure all labels and dependencies fit within page margins.</p>
-              <img class="timeline-img timeline-img-appendix" src="${roadmapDataUrl}" alt="Detailed roadmap timeline chart" />
-            </div>
           </div>
         </div>
   `);
@@ -5293,8 +5401,9 @@ function renderFinal(assessment) {
             <p style="margin:0;"><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
           <div class="body" style="padding:20px 26px;">
-            <div class="note">
-              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            <div class="disclaimer-box">
+              <div class="disclaimer-title">Disclaimer</div>
+              <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
             <p><span class="icon-chip">[Summary]</span><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
             <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
@@ -5307,9 +5416,9 @@ function renderFinal(assessment) {
             <h2 style="margin:0 0 8px;">Top Risks Requiring Board Attention</h2>
             ${criticalFindings.length ? `<ul style="margin-top:0;">${criticalFindings.slice(0, 4).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical contradictions detected from current data.</p>"}
             <h2 style="margin:14px 0 8px;">Immediate Decisions / Actions</h2>
-            <table style="width:100%; border-collapse:collapse;">
-              <tr><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Priority Action</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Owner</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">By When</th><th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:7px;">Why It Matters</th></tr>
-              ${actionPlan.slice(0, 5).map((a) => `<tr><td style="border:1px solid #d6e5dd; padding:7px;"><strong>${escapeHtml(a.control)}</strong><br><span style="font-size:11px; color:#607a72;">${escapeHtml(a.recommendedAction)}</span></td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.owner)}</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.window)} (by ${escapeHtml(a.due)})</td><td style="border:1px solid #d6e5dd; padding:7px;">${escapeHtml(a.businessImpact)}</td></tr>`).join("")}
+            <table>
+              <tr><th>Priority Action</th><th>Owner</th><th>By When</th><th>Why It Matters</th></tr>
+              ${actionPlan.slice(0, 5).map((a) => `<tr><td><strong>${escapeHtml(a.control)}</strong><br><span class="small">${escapeHtml(a.recommendedAction)}</span></td><td>${escapeHtml(a.owner)}</td><td>${escapeHtml(a.window)} (by ${escapeHtml(a.due)})</td><td>${escapeHtml(a.businessImpact)}</td></tr>`).join("")}
             </table>
             <p style="clear:both; margin-top:14px;"><strong>Roadmap context:</strong> ${escapeHtml(horizonSummary)} | ${escapeHtml(approachLabel)} approach | ${escapeHtml(timeline.scenarioLabel)} scenario.</p>
           </div>
@@ -5323,8 +5432,9 @@ function renderFinal(assessment) {
             <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
           <div class="body" style="padding:22px 28px;">
-            <div class="note">
-              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            <div class="disclaimer-box">
+              <div class="disclaimer-title">Disclaimer</div>
+              <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
             <h2>Sample Executive Summary</h2>
             <p>This sample report demonstrates a low-maturity/high-ambition scenario for a mid-sized Australian technology manufacturer. The current control baseline is early-stage, while strategic ambition requires rapid formalization of governance, risk, and operational assurance controls.</p>
@@ -5355,34 +5465,35 @@ function renderFinal(assessment) {
             <p style="margin:0;"><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
           </div>
           <div class="body" style="padding:22px 30px;">
-            <div class="note">
-              <p><span class="icon-chip">[Disclaimer]</span>${escapeHtml(reportDisclaimer)}</p>
+            <div class="disclaimer-box">
+              <div class="disclaimer-title">Disclaimer</div>
+              <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
             <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
-            <table style="width:100%; border-collapse:collapse; margin-top:10px;">
+            <table>
               <tr>
-                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Phase</th>
-                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Window</th>
-                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Focus</th>
-                <th style="border:1px solid #d6e5dd; background:#edf6f1; text-align:left; padding:8px;">Expected Evidence</th>
+                <th>Phase</th>
+                <th>Window</th>
+                <th>Focus</th>
+                <th>Expected Evidence</th>
               </tr>
               <tr>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Phase 1 - Foundation</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Weeks 1-8</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Scope, policy framework, governance forum, role accountability</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Approved policy pack, scope register, governance charter, RACI</td>
+                <td>Phase 1 - Foundation</td>
+                <td>Weeks 1-8</td>
+                <td>Scope, policy framework, governance forum, role accountability</td>
+                <td>Approved policy pack, scope register, governance charter, RACI</td>
               </tr>
               <tr>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Phase 2 - Risk and Operations</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Weeks 9-20</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Risk method, risk register, model validation, data lineage, oversight controls</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Risk records, validation templates, oversight logs, incident playbooks</td>
+                <td>Phase 2 - Risk and Operations</td>
+                <td>Weeks 9-20</td>
+                <td>Risk method, risk register, model validation, data lineage, oversight controls</td>
+                <td>Risk records, validation templates, oversight logs, incident playbooks</td>
               </tr>
               <tr>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Phase 3 - Assurance and Improvement</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Weeks 21+</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">Monitoring, reporting, internal audit, corrective actions, continual improvement</td>
-                <td style="border:1px solid #d6e5dd; padding:8px;">KPI dashboards, management reviews, audit findings, CAPA evidence</td>
+                <td>Phase 3 - Assurance and Improvement</td>
+                <td>Weeks 21+</td>
+                <td>Monitoring, reporting, internal audit, corrective actions, continual improvement</td>
+                <td>KPI dashboards, management reviews, audit findings, CAPA evidence</td>
               </tr>
             </table>
             <h2 style="margin-top:18px;">Sample Timeline Snapshot</h2>
