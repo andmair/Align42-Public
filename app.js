@@ -4471,6 +4471,379 @@ function download(name, type, content) {
   URL.revokeObjectURL(url);
 }
 
+function xmlEscape(text) {
+  return `${text ?? ""}`
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function dataUrlToBytes(dataUrl) {
+  const [, base64 = ""] = `${dataUrl || ""}`.split(",");
+  const binary = atob(base64);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let i = 0; i < 256; i += 1) {
+    let c = i;
+    for (let j = 0; j < 8; j += 1) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    table[i] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i += 1) crc = CRC32_TABLE[(crc ^ bytes[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function dosDateTimeParts(date = new Date()) {
+  const year = Math.max(1980, date.getFullYear());
+  const dosTime = ((date.getHours() & 0x1F) << 11) | ((date.getMinutes() & 0x3F) << 5) | Math.floor((date.getSeconds() & 0x3F) / 2);
+  const dosDate = (((year - 1980) & 0x7F) << 9) | (((date.getMonth() + 1) & 0x0F) << 5) | (date.getDate() & 0x1F);
+  return { dosTime, dosDate };
+}
+
+function concatUint8Arrays(parts) {
+  const total = parts.reduce((sum, p) => sum + p.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
+}
+
+function createStoredZip(entries) {
+  const encoder = new TextEncoder();
+  const files = entries.map((entry) => {
+    const nameBytes = encoder.encode(entry.name);
+    const dataBytes = typeof entry.data === "string" ? encoder.encode(entry.data) : entry.data;
+    const checksum = crc32(dataBytes);
+    const { dosTime, dosDate } = dosDateTimeParts(entry.date || new Date());
+    return { nameBytes, dataBytes, checksum, dosTime, dosDate };
+  });
+
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  for (const file of files) {
+    const local = new Uint8Array(30 + file.nameBytes.length + file.dataBytes.length);
+    const view = new DataView(local.buffer);
+    view.setUint32(0, 0x04034B50, true);
+    view.setUint16(4, 20, true);
+    view.setUint16(6, 0, true);
+    view.setUint16(8, 0, true);
+    view.setUint16(10, file.dosTime, true);
+    view.setUint16(12, file.dosDate, true);
+    view.setUint32(14, file.checksum, true);
+    view.setUint32(18, file.dataBytes.length, true);
+    view.setUint32(22, file.dataBytes.length, true);
+    view.setUint16(26, file.nameBytes.length, true);
+    view.setUint16(28, 0, true);
+    local.set(file.nameBytes, 30);
+    local.set(file.dataBytes, 30 + file.nameBytes.length);
+    localParts.push(local);
+
+    const central = new Uint8Array(46 + file.nameBytes.length);
+    const cview = new DataView(central.buffer);
+    cview.setUint32(0, 0x02014B50, true);
+    cview.setUint16(4, 20, true);
+    cview.setUint16(6, 20, true);
+    cview.setUint16(8, 0, true);
+    cview.setUint16(10, 0, true);
+    cview.setUint16(12, file.dosTime, true);
+    cview.setUint16(14, file.dosDate, true);
+    cview.setUint32(16, file.checksum, true);
+    cview.setUint32(20, file.dataBytes.length, true);
+    cview.setUint32(24, file.dataBytes.length, true);
+    cview.setUint16(28, file.nameBytes.length, true);
+    cview.setUint16(30, 0, true);
+    cview.setUint16(32, 0, true);
+    cview.setUint16(34, 0, true);
+    cview.setUint16(36, 0, true);
+    cview.setUint32(38, 0, true);
+    cview.setUint32(42, offset, true);
+    central.set(file.nameBytes, 46);
+    centralParts.push(central);
+
+    offset += local.length;
+  }
+
+  const centralDir = concatUint8Arrays(centralParts);
+  const locals = concatUint8Arrays(localParts);
+  const end = new Uint8Array(22);
+  const eview = new DataView(end.buffer);
+  eview.setUint32(0, 0x06054B50, true);
+  eview.setUint16(4, 0, true);
+  eview.setUint16(6, 0, true);
+  eview.setUint16(8, files.length, true);
+  eview.setUint16(10, files.length, true);
+  eview.setUint32(12, centralDir.length, true);
+  eview.setUint32(16, locals.length, true);
+  eview.setUint16(20, 0, true);
+  return concatUint8Arrays([locals, centralDir, end]);
+}
+
+function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) {
+  const preparedFor = state.profile?.name || "User";
+  const orgDisplay = assessment.data.context?.orgName || "Organisation";
+  const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
+  const timeline = roadmapTimeline(assessment, roadmapRows(assessment));
+  const generatedAt = new Date().toISOString();
+  const imageBytes = dataUrlToBytes(roadmapDataUrl);
+  const summaryLines = actionPlan.slice(0, 4).map((a, i) => `${i + 1}. ${a.control} - ${a.window} (${a.owner})`).join(" | ");
+  const detailLines = timelineRows.slice(0, 5).map((r) => `${r.control}: ${r.startLabel} to ${r.endLabel}`).join(" | ");
+
+  const entries = [
+    {
+      name: "[Content_Types].xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Default Extension="png" ContentType="image/png"/>
+  <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
+  <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
+  <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
+  <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
+  <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
+  <Override PartName="/ppt/presProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presProps+xml"/>
+  <Override PartName="/ppt/viewProps.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.viewProps+xml"/>
+</Types>`
+    },
+    {
+      name: "_rels/.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>
+</Relationships>`
+    },
+    {
+      name: "docProps/core.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <dc:title>Align42 Roadmap</dc:title>
+  <dc:subject>ISO 42001 compliance roadmap</dc:subject>
+  <dc:creator>Align42</dc:creator>
+  <cp:lastModifiedBy>Align42</cp:lastModifiedBy>
+  <dcterms:created xsi:type="dcterms:W3CDTF">${generatedAt}</dcterms:created>
+  <dcterms:modified xsi:type="dcterms:W3CDTF">${generatedAt}</dcterms:modified>
+</cp:coreProperties>`
+    },
+    {
+      name: "docProps/app.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
+  <Application>Microsoft Office PowerPoint</Application>
+  <PresentationFormat>On-screen Show (16:9)</PresentationFormat>
+  <Slides>1</Slides>
+  <Notes>0</Notes>
+  <HiddenSlides>0</HiddenSlides>
+  <MMClips>1</MMClips>
+  <ScaleCrop>false</ScaleCrop>
+  <HeadingPairs>
+    <vt:vector size="2" baseType="variant">
+      <vt:variant><vt:lpstr>Theme</vt:lpstr></vt:variant>
+      <vt:variant><vt:i4>1</vt:i4></vt:variant>
+    </vt:vector>
+  </HeadingPairs>
+  <TitlesOfParts>
+    <vt:vector size="1" baseType="lpstr">
+      <vt:lpstr>Align42 Roadmap</vt:lpstr>
+    </vt:vector>
+  </TitlesOfParts>
+</Properties>`
+    },
+    {
+      name: "ppt/presentation.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" saveSubsetFonts="1" autoCompressPictures="0">
+  <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
+  <p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst>
+  <p:sldSz cx="12192000" cy="6858000"/>
+  <p:notesSz cx="6858000" cy="9144000"/>
+</p:presentation>`
+    },
+    {
+      name: "ppt/_rels/presentation.xml.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+</Relationships>`
+    },
+    {
+      name: "ppt/presProps.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:presentationPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>`
+    },
+    {
+      name: "ppt/viewProps.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:viewPr xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:normalViewPr/>
+  <p:slideViewPr/>
+  <p:outlineViewPr/>
+  <p:notesTextViewPr/>
+  <p:gridSpacing cx="780288" cy="780288"/>
+</p:viewPr>`
+    },
+    {
+      name: "ppt/slideMasters/slideMaster1.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld name="Master">
+    <p:bg><p:bgRef idx="1001"><a:schemeClr val="bg1"/></p:bgRef></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk2"/>
+  <p:sldLayoutIdLst><p:sldLayoutId id="2147483649" r:id="rId1"/></p:sldLayoutIdLst>
+  <p:txStyles/>
+</p:sldMaster>`
+    },
+    {
+      name: "ppt/slideMasters/_rels/slideMaster1.xml.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>`
+    },
+    {
+      name: "ppt/slideLayouts/slideLayout1.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" type="blank" preserve="1">
+  <p:cSld name="Blank">
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sldLayout>`
+    },
+    {
+      name: "ppt/theme/theme1.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Align42 Theme">
+  <a:themeElements>
+    <a:clrScheme name="Align42">
+      <a:dk1><a:srgbClr val="16312B"/></a:dk1>
+      <a:lt1><a:srgbClr val="FFFFFF"/></a:lt1>
+      <a:dk2><a:srgbClr val="0D594B"/></a:dk2>
+      <a:lt2><a:srgbClr val="EEF5F1"/></a:lt2>
+      <a:accent1><a:srgbClr val="0D7F60"/></a:accent1>
+      <a:accent2><a:srgbClr val="23AB7D"/></a:accent2>
+      <a:accent3><a:srgbClr val="B97A2F"/></a:accent3>
+      <a:accent4><a:srgbClr val="DCECE6"/></a:accent4>
+      <a:accent5><a:srgbClr val="F4EADF"/></a:accent5>
+      <a:accent6><a:srgbClr val="45625B"/></a:accent6>
+      <a:hlink><a:srgbClr val="0563C1"/></a:hlink>
+      <a:folHlink><a:srgbClr val="954F72"/></a:folHlink>
+    </a:clrScheme>
+    <a:fontScheme name="Align42 Fonts">
+      <a:majorFont><a:latin typeface="Aptos"/><a:ea typeface=""/><a:cs typeface=""/></a:majorFont>
+      <a:minorFont><a:latin typeface="Aptos"/><a:ea typeface=""/><a:cs typeface=""/></a:minorFont>
+    </a:fontScheme>
+    <a:fmtScheme name="Align42 Format">
+      <a:fillStyleLst><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:fillStyleLst>
+      <a:lnStyleLst><a:ln w="9525"><a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:ln></a:lnStyleLst>
+      <a:effectStyleLst><a:effectStyle/></a:effectStyleLst>
+      <a:bgFillStyleLst><a:solidFill><a:schemeClr val="lt1"/></a:solidFill></a:bgFillStyleLst>
+    </a:fmtScheme>
+  </a:themeElements>
+  <a:objectDefaults/>
+  <a:extraClrSchemeLst/>
+</a:theme>`
+    },
+    {
+      name: "ppt/slides/slide1.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:bg><p:bgRef idx="1001"><a:schemeClr val="lt1"/></p:bgRef></p:bg>
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="457200" y="228600"/><a:ext cx="5486400" cy="685800"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:rPr lang="en-AU" sz="2400" b="1" dirty="0"/><a:t>${xmlEscape(`Align42 Roadmap for ${orgDisplay}`)}</a:t></a:r></a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="3" name="Subtitle"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="457200" y="914400"/><a:ext cx="5486400" cy="685800"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr/>
+          <a:lstStyle/>
+          <a:p><a:r><a:rPr lang="en-AU" sz="1200" b="1" dirty="0"><a:solidFill><a:srgbClr val="0D594B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Prepared for ${preparedFor} | ${approachLabel} approach | ${timeline.scenarioLabel}`)}</a:t></a:r></a:p>
+          <a:p><a:r><a:rPr lang="en-AU" sz="1000" dirty="0"><a:solidFill><a:srgbClr val="45625B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Horizon ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)}`)}</a:t></a:r></a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="4" name="Summary"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="457200" y="1600200"/><a:ext cx="3200400" cy="4114800"/></a:xfrm>
+          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
+          <a:solidFill><a:srgbClr val="EEF5F1"/></a:solidFill>
+          <a:ln><a:solidFill><a:srgbClr val="BFD2CA"/></a:solidFill></a:ln>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" lIns="228600" tIns="171450" rIns="228600" bIns="171450"/>
+          <a:lstStyle/>
+          <a:p><a:r><a:rPr lang="en-AU" sz="1200" b="1"/><a:t>Priority Action Summary</a:t></a:r></a:p>
+          <a:p><a:r><a:rPr lang="en-AU" sz="900"/><a:t>${xmlEscape(summaryLines)}</a:t></a:r></a:p>
+          <a:p><a:r><a:rPr lang="en-AU" sz="900"/><a:t>${xmlEscape(detailLines)}</a:t></a:r></a:p>
+        </p:txBody>
+      </p:sp>
+      <p:pic>
+        <p:nvPicPr><p:cNvPr id="5" name="Roadmap Image"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
+        <p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
+        <p:spPr>
+          <a:xfrm><a:off x="3886200" y="1600200"/><a:ext cx="7772400" cy="4114800"/></a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+        </p:spPr>
+      </p:pic>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:sld>`
+    },
+    {
+      name: "ppt/slides/_rels/slide1.xml.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+</Relationships>`
+    },
+    { name: "ppt/media/image1.png", data: imageBytes }
+  ];
+
+  return createStoredZip(entries);
+}
+
 function buildRoadmapCanvas(assessment) {
   const rows = roadmapRows(assessment);
   const timeline = roadmapTimeline(assessment, rows);
@@ -5655,14 +6028,14 @@ function renderRoadmap(assessment) {
 
     <div class="actions">
       <button class="btn secondary" id="downloadRoadmapPngBtn">Download Roadmap PNG</button>
-      <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPT</button>
+      <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPTX</button>
       <button class="btn secondary" id="downloadRoadmapPdfBtn">Download Roadmap PDF</button>
     </div>
     ${isDemoMode ? `<div class="question question-focus">
       <h3>Demo Sample Roadmap</h3>
       <p class="hint">Use this sample file to preview roadmap presentation before tailoring a live output.</p>
       <div class="actions">
-        <button class="btn secondary" id="downloadDemoRoadmapBtn">Sample Roadmap (.ppt)</button>
+        <button class="btn secondary" id="downloadDemoRoadmapBtn">Sample Roadmap (.pptx)</button>
       </div>
     </div>` : ""}
 
@@ -5687,16 +6060,8 @@ function renderRoadmap(assessment) {
     a.click();
   });
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
-    const html = `
-      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px; max-width:1000px; box-sizing:border-box; overflow-wrap:anywhere; word-break:break-word;">
-        <h1>Align42 Compliance Readiness Roadmap</h1>
-        <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-        <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Markers:</strong> ${timeline.planningWeeks <= 14 ? "Weekly" : "Monthly"}</p>
-        <img src="${roadmapDataUrl}" style="width:100%; max-width:100%; height:auto; border:1px solid #d5e4dc; border-radius:10px; display:block;" />
-      </body></html>
-    `;
-    download("align42-roadmap.ppt", "application/vnd.ms-powerpoint", html);
+    const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
+    download("align42-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
   });
   document.getElementById("downloadRoadmapPdfBtn").addEventListener("click", () => {
     const w = window.open("", "_blank");
@@ -5715,7 +6080,8 @@ function renderRoadmap(assessment) {
     w.print();
   });
   document.getElementById("downloadDemoRoadmapBtn")?.addEventListener("click", () => {
-    download("align42-demo-sample-roadmap.ppt", "application/vnd.ms-powerpoint", demoSampleRoadmapHtml());
+    const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
+    download("align42-demo-sample-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
   });
   bindNav(assessment);
 }
