@@ -50,9 +50,11 @@ class TestRoadmapAndReportRegression(unittest.TestCase):
 
     def test_export_canvas_limits_rows_to_avoid_overlap(self):
         src = self.source
-        self.assertIn("const maxRows = Math.max(4, Math.floor((canvas.height - firstRowY - bottomPadding) / rowGap));", src)
+        self.assertIn("const maxRows = Math.max(4, Math.floor((frameH - (rowTop - frameY) - bottomPadding) / rowGap));", src)
         self.assertIn("const items = timeline.items.slice(0, maxRows);", src)
         self.assertIn("const fitText = (text, maxWidth) => {", src)
+        self.assertIn("const markers = [];", src)
+        self.assertIn("drawMilestoneIcon", src)
 
     def test_simple_mode_blocks_ai_provider_use(self):
         src = self.source

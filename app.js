@@ -4851,13 +4851,26 @@ function buildRoadmapCanvas(assessment) {
   const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
   const scenarioLabel = timeline.scenarioLabel;
   const canvas = document.createElement("canvas");
-  canvas.width = 1680;
-  canvas.height = 1080;
-  const rowHeight = 92;
-  const rowGap = 102;
-  const firstRowY = 250;
-  const bottomPadding = 76;
-  const maxRows = Math.max(4, Math.floor((canvas.height - firstRowY - bottomPadding) / rowGap));
+  canvas.width = 1600;
+  canvas.height = 1132;
+  const margin = 42;
+  const frameX = margin;
+  const frameY = 156;
+  const frameW = canvas.width - (margin * 2);
+  const frameH = canvas.height - frameY - 64;
+  const headerH = 132;
+  const innerPad = 18;
+  const titleColW = 640;
+  const timelineColX = frameX + titleColW + 46;
+  const axisLeft = timelineColX;
+  const axisRight = frameX + frameW - 34;
+  const axisWidth = axisRight - axisLeft;
+  const axisY = frameY + 98;
+  const rowTop = axisY + 34;
+  const rowHeight = 82;
+  const rowGap = 94;
+  const bottomPadding = 82;
+  const maxRows = Math.max(4, Math.floor((frameH - (rowTop - frameY) - bottomPadding) / rowGap));
   const items = timeline.items.slice(0, maxRows);
   const ctx = canvas.getContext("2d");
   const fitText = (text, maxWidth) => {
@@ -4868,12 +4881,79 @@ function buildRoadmapCanvas(assessment) {
     while (out.length > 1 && ctx.measureText(out + ellipsis).width > maxWidth) out = out.slice(0, -1);
     return `${out}${ellipsis}`;
   };
-  ctx.fillStyle = "#f2f7f3";
+  const wrapText = (text, maxWidth) => {
+    const words = `${text || ""}`.split(/\s+/).filter(Boolean);
+    const lines = [];
+    let line = "";
+    for (const word of words) {
+      const next = line ? `${line} ${word}` : word;
+      if (ctx.measureText(next).width <= maxWidth || !line) {
+        line = next;
+      } else {
+        lines.push(line);
+        line = word;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  };
+  const drawRoundRect = (x, y, w, h, r, fill, stroke) => {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.arcTo(x + w, y, x + w, y + h, radius);
+    ctx.arcTo(x + w, y + h, x, y + h, radius);
+    ctx.arcTo(x, y + h, x, y, radius);
+    ctx.arcTo(x, y, x + w, y, radius);
+    ctx.closePath();
+    if (fill) {
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+    if (stroke) {
+      ctx.strokeStyle = stroke;
+      ctx.stroke();
+    }
+  };
+  const drawMilestoneIcon = (type, x, y, color) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    if (type === "critical") {
+      ctx.beginPath();
+      ctx.moveTo(0, -9);
+      ctx.lineTo(8, 0);
+      ctx.lineTo(0, 9);
+      ctx.lineTo(-8, 0);
+      ctx.closePath();
+      ctx.fill();
+    } else if (type === "checkpoint") {
+      ctx.beginPath();
+      ctx.arc(0, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(-6, -9);
+      ctx.lineTo(6, -2);
+      ctx.lineTo(-6, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(-7, -9, 2, 18);
+    }
+    ctx.restore();
+  };
+  ctx.fillStyle = "#edf3ef";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
   grad.addColorStop(0, "#0d7f60"); grad.addColorStop(1, "#23ab7d");
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, 130);
+  ctx.fillRect(0, 0, canvas.width, headerH);
   ctx.fillStyle = "#fff";
   ctx.font = "700 38px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText("Align42 Compliance Readiness Timeline", 54, 64);
@@ -4881,70 +4961,119 @@ function buildRoadmapCanvas(assessment) {
   ctx.fillText(`Approach: ${approachLabel} | Scenario: ${scenarioLabel} | Weighted score: ${score}%`, 54, 96);
   ctx.font = "500 18px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText(`Horizon: ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)} | Target: ${timeline.horizonTargetText}`, 54, 122);
+  drawRoundRect(frameX, frameY, frameW, frameH, 18, "#f7fbf9", "#cbd9d3");
+  drawRoundRect(frameX + 14, frameY + 14, frameW - 28, frameH - 28, 16, "#ffffff", "#e0ebe6");
 
-  const axisLeft = 830;
-  const axisRight = 1600;
-  const axisWidth = axisRight - axisLeft;
-  const axisY = 190;
-  const markerMode = timeline.planningWeeks <= 14 ? "week" : "month";
-  const markerStep = markerMode === "week" ? 1 : 4;
-  const timelineBottom = firstRowY + ((items.length - 1) * rowGap) + 30;
+  const markerMode = timeline.planningWeeks <= 16 ? "week" : "month";
+  const rawMarkers = [];
+  if (markerMode === "week") {
+    const step = timeline.planningWeeks <= 8 ? 1 : 2;
+    for (let week = 0; week <= timeline.planningWeeks; week += step) {
+      rawMarkers.push({
+        week,
+        label: week === 0 ? formatDateShort(timeline.horizonStart) : `W${week + 1}`
+      });
+    }
+  } else {
+    let cursor = new Date(timeline.horizonStart);
+    cursor.setDate(1);
+    while (cursor <= timeline.horizonEnd) {
+      const diffWeeks = Math.round((cursor - timeline.horizonStart) / (1000 * 60 * 60 * 24 * 7));
+      if (diffWeeks >= 0 && diffWeeks <= timeline.planningWeeks) {
+        rawMarkers.push({
+          week: diffWeeks,
+          label: cursor.toLocaleDateString(undefined, { month: "short", year: "2-digit" })
+        });
+      }
+      cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 2, 1);
+    }
+    rawMarkers.unshift({ week: 0, label: formatDateShort(timeline.horizonStart) });
+    rawMarkers.push({ week: timeline.planningWeeks, label: formatDateShort(timeline.horizonEnd) });
+  }
+  const markers = [];
+  let lastMarkerRight = -Infinity;
+  ctx.font = "600 13px 'Avenir Next', 'Segoe UI', sans-serif";
+  rawMarkers.forEach((marker, idx) => {
+    const x = axisLeft + Math.round((marker.week / timeline.planningWeeks) * axisWidth);
+    const labelWidth = ctx.measureText(marker.label).width;
+    const left = x - labelWidth / 2;
+    const right = x + labelWidth / 2;
+    const isEdge = idx === 0 || idx === rawMarkers.length - 1;
+    if (isEdge || left - lastMarkerRight >= 16) {
+      markers.push({ ...marker, x, labelWidth });
+      lastMarkerRight = right;
+    }
+  });
+
+  const timelineBottom = rowTop + ((items.length - 1) * rowGap) + 26;
+  ctx.fillStyle = "#4b6660";
+  ctx.font = "600 14px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText("Timeline", axisLeft, frameY + 26);
+  drawRoundRect(frameX + innerPad, frameY + 18, 358, 48, 12, "#eef5f1", "#d2dfd9");
+  ctx.fillStyle = "#4b6660";
+  ctx.font = "700 13px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText("Milestone legend", frameX + innerPad + 14, frameY + 37);
+  drawMilestoneIcon("start", frameX + innerPad + 26, frameY + 52, "#0d7f60");
+  ctx.font = "500 12px 'Avenir Next', 'Segoe UI', sans-serif";
+  ctx.fillText("Start", frameX + innerPad + 38, frameY + 56);
+  drawMilestoneIcon("checkpoint", frameX + innerPad + 116, frameY + 52, "#b97a2f");
+  ctx.fillText("Checkpoint", frameX + innerPad + 128, frameY + 56);
+  drawMilestoneIcon("critical", frameX + innerPad + 244, frameY + 52, "#cc3a3a");
+  ctx.fillText("Critical path", frameX + innerPad + 256, frameY + 56);
+
   ctx.strokeStyle = "#aec8bd";
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(axisLeft, axisY);
   ctx.lineTo(axisRight, axisY);
   ctx.stroke();
-  for (let week = 0; week <= timeline.planningWeeks; week += markerStep) {
-    const x = axisLeft + Math.round((week / timeline.planningWeeks) * axisWidth);
+  markers.forEach((marker) => {
     ctx.strokeStyle = "#d7e5df";
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x, axisY + 2);
-    ctx.lineTo(x, timelineBottom);
+    ctx.moveTo(marker.x, axisY + 2);
+    ctx.lineTo(marker.x, timelineBottom);
     ctx.stroke();
-    const markerDate = addDays(timeline.horizonStart, week * 7);
-    const markerLabel = markerMode === "week"
-      ? `W${week + 1}`
-      : markerDate.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-    ctx.fillStyle = "#5a756d";
-    ctx.font = "500 12px 'Avenir Next', 'Segoe UI', sans-serif";
-    ctx.fillText(markerLabel, x - (ctx.measureText(markerLabel).width / 2), axisY - 16);
-  }
-  ctx.fillStyle = "#345950";
-  ctx.font = "600 16px 'Avenir Next', 'Segoe UI', sans-serif";
-  ctx.fillText(formatDateShort(timeline.horizonStart), axisLeft, axisY - 12);
-  const endLabelWidth = ctx.measureText(formatDateShort(timeline.horizonEnd)).width;
-  ctx.fillText(formatDateShort(timeline.horizonEnd), axisRight - endLabelWidth, axisY - 12);
+    const textX = Math.max(axisLeft, Math.min(axisRight - marker.labelWidth, marker.x - (marker.labelWidth / 2)));
+    ctx.fillStyle = "#4f6962";
+    ctx.fillText(marker.label, textX, axisY - 16);
+  });
 
-  let y = firstRowY;
+  let y = rowTop;
   items.forEach((r, i) => {
     const pColor = r.priority === "High" ? "#cc3a3a" : r.priority === "Medium" ? "#c18428" : "#2a8d4a";
     const startX = axisLeft + Math.round((r.startWeekScaled / timeline.planningWeeks) * axisWidth);
     const endX = axisLeft + Math.round((r.endWeekScaled / timeline.planningWeeks) * axisWidth);
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(40, y - 30, 1560, rowHeight);
-    ctx.strokeStyle = "#d0dfd8";
-    ctx.strokeRect(40, y - 30, 1560, rowHeight);
+    drawRoundRect(frameX, y - 22, frameW, rowHeight, 12, "#ffffff", "#d6e3dd");
     ctx.fillStyle = "#18322e";
-    ctx.font = "700 21px 'Avenir Next', 'Segoe UI', sans-serif";
-    ctx.fillText(fitText(`${i + 1}. ${r.control}`, 760), 56, y - 2);
-    ctx.font = "500 17px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.font = "700 19px 'Avenir Next', 'Segoe UI', sans-serif";
+    ctx.fillText(fitText(`${i + 1}. ${r.control}`, titleColW - 66), frameX + 16, y + 2);
+    ctx.font = "500 15px 'Avenir Next', 'Segoe UI', sans-serif";
     ctx.fillStyle = "#5b766f";
-    ctx.fillText(fitText(`${r.clause} | Owner: ${r.owner}`, 760), 56, y + 24);
-    ctx.fillText(fitText(`${r.startLabel} -> ${r.endLabel} (${r.timeframe})`, 760), 56, y + 46);
-    ctx.fillStyle = "#eef4f1";
-    ctx.fillRect(axisLeft, y + 8, axisWidth, 18);
+    ctx.fillText(fitText(`${r.clause} | ${r.owner}`, titleColW - 66), frameX + 16, y + 24);
+    ctx.fillText(fitText(`${r.startLabel} -> ${r.endLabel}`, titleColW - 66), frameX + 16, y + 44);
+    drawMilestoneIcon(i === 0 ? "start" : (r.criticalPath ? "critical" : "checkpoint"), frameX + titleColW - 28, y + 2, pColor);
+    drawRoundRect(axisLeft, y + 10, axisWidth, 18, 9, "#e9f0ec", null);
     ctx.fillStyle = pColor;
-    ctx.fillRect(startX, y + 8, Math.max(10, endX - startX), 18);
+    drawRoundRect(startX, y + 10, Math.max(18, endX - startX), 18, 9, pColor, null);
+    const pillText = `${r.priority}${r.criticalPath ? " | critical path" : ""}`;
+    ctx.font = "700 14px 'Avenir Next', 'Segoe UI', sans-serif";
+    const pillWidth = ctx.measureText(pillText).width + 26;
+    const pillX = Math.max(axisLeft, axisRight - pillWidth);
+    drawRoundRect(pillX, y + 34, pillWidth, 22, 11, pColor === "#cc3a3a" ? "#fde8e8" : pColor === "#c18428" ? "#fbf2df" : "#e7f6eb", null);
     ctx.fillStyle = pColor;
-    ctx.font = "700 15px 'Avenir Next', 'Segoe UI', sans-serif";
-    ctx.fillText(`${r.priority}${r.criticalPath ? " | critical path" : ""}`, axisRight + 10, y + 23);
+    ctx.fillText(pillText, pillX + 13, y + 49);
     y += rowGap;
   });
-  ctx.fillStyle = "#4f6b63";
-  ctx.font = "500 15px 'Avenir Next', 'Segoe UI', sans-serif";
-  ctx.fillText(`Constraint notes: ${timeline.constraintNotes}${timeline.compressed ? " | Timeline compressed to fit selected horizon." : ""}`, 54, canvas.height - 24);
+
+  const notes = `Constraint notes: ${timeline.constraintNotes}${timeline.compressed ? " | Timeline compressed to fit selected horizon." : ""}`;
+  const noteBoxY = canvas.height - 70;
+  drawRoundRect(frameX, noteBoxY - 26, frameW, 42, 10, "#edf4f0", "#d6e2dc");
+  ctx.fillStyle = "#4d6861";
+  ctx.font = "500 14px 'Avenir Next', 'Segoe UI', sans-serif";
+  wrapText(notes, frameW - 28).slice(0, 2).forEach((line, idx) => {
+    ctx.fillText(line, frameX + 14, noteBoxY - 2 + (idx * 16));
+  });
   return canvas;
 }
 
