@@ -1,0 +1,28 @@
+name: Sync to Public Repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Confirm sync to public repo'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'yes'
+          - 'no'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'yes'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Push to Public Repo
+        run: |
+          git remote add public https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/andmair/Align42-Public.git
+          git push public main --force
