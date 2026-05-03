@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Align42 Glossary</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .glossary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .glossary-card {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 1rem 1.1rem;
+      box-shadow: var(--shadow);
+    }
+    .glossary-card h3 {
+      margin: 0 0 0.35rem;
+    }
+    .glossary-source {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.5rem;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+    .glossary-source a {
+      color: var(--green-700);
+      font-weight: 700;
+      text-decoration: none;
+    }
+    .glossary-source a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="bg-shape bg-a"></div>
+  <div class="bg-shape bg-b"></div>
+
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-row">
+          <img class="brand-logo" src="logo-align42.svg" alt="Align42 logo" />
+          <h1>Glossary</h1>
+        </div>
+        <p>Key AI governance, risk, and compliance concepts used in Align42, prioritizing ISO terminology and using public international sources where ISO definitions are not publicly available.</p>
+      </div>
+      <div class="actions">
+        <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
+        <a class="btn ghost" href="Align42.html" target="_blank" rel="noopener noreferrer">Open Align42</a>
+      </div>
+    </header>
+
+    <main class="container card content">
+      <div class="question question-focus">
+        <h3>How This Glossary Is Sourced</h3>
+        <p class="hint">Where ISO publishes a public abstract or standard summary, Align42 uses that as the primary source. For concepts that are widely used in AI governance but not clearly defined in public ISO source text, Align42 falls back to authoritative international sources such as the EU AI Act and OECD materials.</p>
+      </div>
+
+      <div class="glossary-grid">
+        <article class="glossary-card">
+          <h3>Artificial Intelligence (AI)</h3>
+          <p>AI is the field concerned with building systems that perform tasks requiring capabilities such as inference, learning, prediction, recommendation, or decision support. Align42 treats this as a governance umbrella term covering both technical systems and the management activities around them.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/74296.html" target="_blank" rel="noopener noreferrer">ISO/IEC 22989:2022</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>AI System</h3>
+          <p>An AI system is a machine-based system that infers from inputs how to generate outputs such as predictions, content, recommendations, or decisions that can affect physical or virtual environments. Different systems vary in autonomy and adaptiveness after deployment.</p>
+          <div class="glossary-source">Source: <a href="https://www.oecd.org/en/publications/explanatory-memorandum-on-the-updated-oecd-definition-of-an-ai-system_623da898-en.html" target="_blank" rel="noopener noreferrer">OECD explanatory memorandum</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>Machine Learning (ML)</h3>
+          <p>Machine learning is the family of AI approaches in which a system derives patterns or decision logic from data rather than relying only on fixed hand-coded rules. In Align42, ML is treated as one common mechanism through which AI systems operate.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/74438.html" target="_blank" rel="noopener noreferrer">ISO/IEC 23053:2022</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>Deep Learning</h3>
+          <p>Deep learning is a subset of machine learning that uses layered model structures to learn increasingly complex representations from data. It is especially relevant where organisations use computer vision, natural language, or generative AI capabilities.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/74438.html" target="_blank" rel="noopener noreferrer">ISO/IEC 23053:2022</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>AI Governance</h3>
+          <p>AI governance is the set of oversight, accountability, policy, and decision-making arrangements an organisation uses to direct and control its AI-related activities. It links board or executive direction with operational controls across the AI lifecycle.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/56641.html" target="_blank" rel="noopener noreferrer">ISO/IEC 38507:2022</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>AI Management System (AIMS)</h3>
+          <p>An AI management system is the structured set of policies, processes, roles, controls, and improvement activities used to manage AI responsibly and consistently. ISO/IEC 42001 uses this management-system approach to embed AI governance into ordinary business operations.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/news/ref3010.html" target="_blank" rel="noopener noreferrer">ISO publication context for ISO/IEC 42001</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>AI Risk Management</h3>
+          <p>AI risk management is the coordinated activity used to identify, analyse, treat, monitor, and communicate risks arising from the development, deployment, or use of AI. It should be integrated into broader organisational risk processes rather than handled as a disconnected technical task.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/77304.html" target="_blank" rel="noopener noreferrer">ISO/IEC 23894:2023</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>AI System Impact Assessment</h3>
+          <p>An AI system impact assessment is a structured review of how an AI system and its foreseeable uses may affect individuals, groups, or society. It supports transparency and accountability by making likely impacts explicit before and during operation.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/42005" target="_blank" rel="noopener noreferrer">ISO/IEC 42005:2025</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>High-Risk AI System</h3>
+          <p>A high-risk AI system is an AI system that falls within categories of use where law treats the potential harm to health, safety, or fundamental rights as significant enough to require stronger controls. In practice, this means heightened governance, testing, documentation, and oversight obligations.</p>
+          <div class="glossary-source">Source: <a href="https://eur-lex.europa.eu/legal-content/EN-EL/TXT/?from=EN&amp;uri=CELEX%3A32024R1689" target="_blank" rel="noopener noreferrer">EU AI Act</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>General-Purpose AI Model (GPAI)</h3>
+          <p>A general-purpose AI model is a model with broad capability across many distinct tasks and which can be integrated into many downstream systems. It is not automatically the same thing as an AI system, because additional components are usually needed before it is deployed in use.</p>
+          <div class="glossary-source">Source: <a href="https://eur-lex.europa.eu/legal-content/EN-EL/TXT/?from=EN&amp;uri=CELEX%3A32024R1689" target="_blank" rel="noopener noreferrer">EU AI Act</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>AI Incident</h3>
+          <p>An AI incident is an event in which an AI system contributes to actual harm, loss, disruption, or other material adverse outcomes. Tracking incidents helps organisations learn from failures and strengthen controls over time.</p>
+          <div class="glossary-source">Source: <a href="https://www.oecd.org/en/publications/defining-ai-incidents-and-related-terms_d1a8d965-en.html" target="_blank" rel="noopener noreferrer">OECD on AI incidents</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>Information Security Management System (ISMS)</h3>
+          <p>An ISMS is the management framework used to establish, implement, maintain, and continually improve information security. In AI governance, it supports protection of models, data, prompts, outputs, and supporting infrastructure.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/27001?tid=312398371" target="_blank" rel="noopener noreferrer">ISO/IEC 27001:2022</a></div>
+        </article>
+
+        <article class="glossary-card">
+          <h3>Privacy Information Management System (PIMS)</h3>
+          <p>A PIMS is a structured privacy management system used to govern the processing of personally identifiable information. For AI programmes, it helps align data use, model development, and operational monitoring with privacy obligations.</p>
+          <div class="glossary-source">Source: <a href="https://www.iso.org/standard/85819.html" target="_blank" rel="noopener noreferrer">ISO/IEC 27701:2025</a></div>
+        </article>
+      </div>
+
+      <p class="hint">This glossary is intended as practical orientation within Align42. For formal interpretation, rely on the authoritative source text linked for each item.</p>
+    </main>
+  </div>
+</body>
+</html>

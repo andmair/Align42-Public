@@ -2437,6 +2437,7 @@ function renderDelegationsPage(assessment) {
         <div class="actions">
           <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
+          <a class="btn ghost" href="glossary.html" target="_blank" rel="noopener noreferrer">📙 Glossary</a>
           <button class="btn secondary" id="refreshDelegationsBtn">↻ Refresh</button>
           <button class="btn ghost" id="backToAssessmentBtn">← Back to Assessment</button>
         </div>
@@ -2666,6 +2667,7 @@ function renderWelcome() {
         <div class="actions">
           <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
+          <a class="btn ghost" href="glossary.html" target="_blank" rel="noopener noreferrer">📙 Glossary</a>
           <button class="btn primary" id="newAssessmentBtn">➕ New Assessment</button>
           ${mode === "simple" ? `<button class="btn secondary" id="demoAssessmentBtn">🧪 Demo Assessment</button>` : ""}
           ${hasProfile ? `<button class="btn ghost" id="editProfileBtn">👤 ${showProfileEditor ? "Close Profile" : "Edit Profile"}</button>` : ""}
@@ -3061,6 +3063,7 @@ function renderAssessment(assessment) {
         <div class="actions">
           <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
           <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
+          <a class="btn ghost small help-icon-btn" href="glossary.html" target="_blank" rel="noopener noreferrer" title="Open glossary" aria-label="Open glossary help">?</a>
           <button class="btn secondary" id="delegationsBtn">📋 Delegations</button>
           <button class="btn secondary" id="saveBtn">💾 Save</button>
           <button class="btn ghost" id="backBtn">← Back</button>
@@ -5544,11 +5547,37 @@ function renderFinal(assessment) {
             padding: 0.35cm 2cm 0;
             border-top: 1px solid var(--doc-line);
           }
+          .doc-first-header, .doc-first-footer {
+            border: 0;
+            padding: 0;
+            height: 0;
+            overflow: hidden;
+          }
           .doc-row {
             display: flex;
             justify-content: space-between;
             gap: 16px;
             align-items: center;
+          }
+          .doc-header-row {
+            width: 100%;
+            text-align: right;
+            font-weight: 700;
+          }
+          .doc-footer-row {
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center;
+            width: 100%;
+            gap: 12px;
+          }
+          .doc-footer-center {
+            text-align: center;
+            justify-self: center;
+          }
+          .doc-footer-right {
+            text-align: right;
+            justify-self: end;
           }
           .doc-main {
             padding-top: 0;
@@ -5759,14 +5788,13 @@ function renderFinal(assessment) {
       </head>
       <body>
         <div style="mso-element:header" id="h1" class="doc-header">
-          <div class="doc-row">
-            <div><strong>Align42 Assessment for ${escapeHtml(orgDisplay)}</strong></div>
-          </div>
+          <div class="doc-header-row">Align42 Report for ${escapeHtml(orgDisplay)}</div>
         </div>
         <div style="mso-element:footer" id="f1" class="doc-footer">
-          <div class="doc-row">
-            <div>Prepared by ${escapeHtml(preparedFor)} on ${escapeHtml(generatedDate)}</div>
-            <div>Page <span class="page-no"></span> of <span class="page-total"></span></div>
+          <div class="doc-footer-row">
+            <div></div>
+            <div class="doc-footer-center">Page <span class="page-no"></span> of <span class="page-total"></span></div>
+            <div class="doc-footer-right">${escapeHtml(generatedDate)}</div>
           </div>
         </div>
         <div style="mso-element:header" id="fh1" class="doc-first-header"></div>
@@ -6158,7 +6186,6 @@ function renderRoadmap(assessment) {
     <div class="actions">
       <button class="btn secondary" id="downloadRoadmapPngBtn">Download Roadmap PNG</button>
       <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPTX</button>
-      <button class="btn secondary" id="downloadRoadmapPdfBtn">Download Roadmap PDF</button>
     </div>
     ${isDemoMode ? `<div class="question question-focus">
       <h3>Demo Sample Roadmap</h3>
@@ -6191,22 +6218,6 @@ function renderRoadmap(assessment) {
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
     const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
     download("align42-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
-  });
-  document.getElementById("downloadRoadmapPdfBtn").addEventListener("click", () => {
-    const w = window.open("", "_blank");
-    if (!w) return;
-    w.document.write(`
-      <html><body style="font-family:Aptos,'Segoe UI',Arial,sans-serif; color:#16312b; margin:24px; max-width:1000px; box-sizing:border-box; overflow-wrap:anywhere; word-break:break-word;">
-        <h1>Align42 Compliance Readiness Roadmap</h1>
-        <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-        <p><strong>Approach:</strong> ${escapeHtml(approachLabel)} | <strong>Scenario:</strong> ${escapeHtml(timeline.scenarioLabel)}</p>
-        <p><strong>Timeline:</strong> ${escapeHtml(horizonSummary)} | <strong>Markers:</strong> ${timeline.planningWeeks <= 14 ? "Weekly" : "Monthly"}</p>
-        <img src="${roadmapDataUrl}" style="width:100%; max-width:100%; height:auto; border:1px solid #d5e4dc; border-radius:10px; display:block;" />
-      </body></html>
-    `);
-    w.document.close();
-    w.focus();
-    w.print();
   });
   document.getElementById("downloadDemoRoadmapBtn")?.addEventListener("click", () => {
     const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
