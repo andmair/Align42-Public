@@ -2436,7 +2436,6 @@ function renderDelegationsPage(assessment) {
         </div>
         <div class="actions">
           <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
-          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <a class="btn ghost" href="glossary.html" target="_blank" rel="noopener noreferrer">📙 Glossary</a>
           <button class="btn secondary" id="refreshDelegationsBtn">↻ Refresh</button>
           <button class="btn ghost" id="backToAssessmentBtn">← Back to Assessment</button>
@@ -3062,7 +3061,6 @@ function renderAssessment(assessment) {
         </div>
         <div class="actions">
           <div class="user-summary">${escapeHtml(profileHeaderSummary())}</div>
-          <a class="btn ghost" href="standards.html" target="_blank" rel="noopener noreferrer">📘 Standards</a>
           <a class="btn ghost small help-icon-btn" href="glossary.html" target="_blank" rel="noopener noreferrer" title="Open glossary" aria-label="Open glossary help">?</a>
           <button class="btn secondary" id="delegationsBtn">📋 Delegations</button>
           <button class="btn secondary" id="saveBtn">💾 Save</button>
@@ -4604,8 +4602,15 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
   const timeline = roadmapTimeline(assessment, roadmapRows(assessment));
   const generatedAt = new Date().toISOString();
   const imageBytes = dataUrlToBytes(roadmapDataUrl);
-  const summaryLines = actionPlan.slice(0, 4).map((a, i) => `${i + 1}. ${a.control} - ${a.window} (${a.owner})`).join(" | ");
-  const detailLines = timelineRows.slice(0, 5).map((r) => `${r.control}: ${r.startLabel} to ${r.endLabel}`).join(" | ");
+  const summaryLines = actionPlan.slice(0, 6).map((a, i) => `${i + 1}. ${a.control} - ${a.window} (${a.owner})`).join("\n");
+  const detailLines = timelineRows.slice(0, 6).map((r) => `${r.control}: ${r.startLabel} to ${r.endLabel}`).join("\n");
+  const notesText = [
+    "Priority Action Summary",
+    summaryLines || "No priority action summary available.",
+    "",
+    "Roadmap Timing Notes",
+    detailLines || "No additional timeline notes available."
+  ].join("\n");
 
   const entries = [
     {
@@ -4619,6 +4624,8 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
   <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
   <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
   <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
+  <Override PartName="/ppt/notesSlides/notesSlide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>
+  <Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>
   <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
@@ -4677,8 +4684,15 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 <p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" saveSubsetFonts="1" autoCompressPictures="0">
   <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
   <p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst>
+  <p:notesMasterIdLst><p:notesMasterId r:id="rId3"/></p:notesMasterIdLst>
   <p:sldSz cx="12192000" cy="6858000"/>
   <p:notesSz cx="6858000" cy="9144000"/>
+  <p:defaultTextStyle>
+    <a:defPPr/>
+    <a:lvl1pPr marL="0" algn="l"/>
+    <a:lvl2pPr marL="457200" algn="l"/>
+    <a:lvl3pPr marL="914400" algn="l"/>
+  </p:defaultTextStyle>
 </p:presentation>`
     },
     {
@@ -4687,6 +4701,7 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/>
 </Relationships>`
     },
     {
@@ -4743,6 +4758,13 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 </p:sldLayout>`
     },
     {
+      name: "ppt/slideLayouts/_rels/slideLayout1.xml.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>
+</Relationships>`
+    },
+    {
       name: "ppt/theme/theme1.xml",
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Align42 Theme">
@@ -4787,44 +4809,28 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
       <p:grpSpPr/>
       <p:sp>
         <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="457200" y="228600"/><a:ext cx="5486400" cy="685800"/></a:xfrm></p:spPr>
+        <p:spPr><a:xfrm><a:off x="228600" y="228600"/><a:ext cx="11658600" cy="548640"/></a:xfrm></p:spPr>
         <p:txBody>
-          <a:bodyPr/>
+          <a:bodyPr anchor="ctr"/>
           <a:lstStyle/>
-          <a:p><a:r><a:rPr lang="en-AU" sz="2400" b="1" dirty="0"/><a:t>${xmlEscape(`Align42 Roadmap for ${orgDisplay}`)}</a:t></a:r></a:p>
+          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-AU" sz="2400" b="1" dirty="0"/><a:t>${xmlEscape(`Align42 Roadmap for ${orgDisplay}`)}</a:t></a:r></a:p>
         </p:txBody>
       </p:sp>
       <p:sp>
         <p:nvSpPr><p:cNvPr id="3" name="Subtitle"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="457200" y="914400"/><a:ext cx="5486400" cy="685800"/></a:xfrm></p:spPr>
+        <p:spPr><a:xfrm><a:off x="228600" y="822960"/><a:ext cx="11658600" cy="548640"/></a:xfrm></p:spPr>
         <p:txBody>
-          <a:bodyPr/>
+          <a:bodyPr anchor="ctr"/>
           <a:lstStyle/>
-          <a:p><a:r><a:rPr lang="en-AU" sz="1200" b="1" dirty="0"><a:solidFill><a:srgbClr val="0D594B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Prepared for ${preparedFor} | ${approachLabel} approach | ${timeline.scenarioLabel}`)}</a:t></a:r></a:p>
-          <a:p><a:r><a:rPr lang="en-AU" sz="1000" dirty="0"><a:solidFill><a:srgbClr val="45625B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Horizon ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)}`)}</a:t></a:r></a:p>
-        </p:txBody>
-      </p:sp>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="4" name="Summary"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
-        <p:spPr>
-          <a:xfrm><a:off x="457200" y="1600200"/><a:ext cx="3200400" cy="4114800"/></a:xfrm>
-          <a:prstGeom prst="roundRect"><a:avLst/></a:prstGeom>
-          <a:solidFill><a:srgbClr val="EEF5F1"/></a:solidFill>
-          <a:ln><a:solidFill><a:srgbClr val="BFD2CA"/></a:solidFill></a:ln>
-        </p:spPr>
-        <p:txBody>
-          <a:bodyPr wrap="square" lIns="228600" tIns="171450" rIns="228600" bIns="171450"/>
-          <a:lstStyle/>
-          <a:p><a:r><a:rPr lang="en-AU" sz="1200" b="1"/><a:t>Priority Action Summary</a:t></a:r></a:p>
-          <a:p><a:r><a:rPr lang="en-AU" sz="900"/><a:t>${xmlEscape(summaryLines)}</a:t></a:r></a:p>
-          <a:p><a:r><a:rPr lang="en-AU" sz="900"/><a:t>${xmlEscape(detailLines)}</a:t></a:r></a:p>
+          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-AU" sz="1200" b="1" dirty="0"><a:solidFill><a:srgbClr val="0D594B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Prepared for ${preparedFor} | ${approachLabel} approach | ${timeline.scenarioLabel}`)}</a:t></a:r></a:p>
+          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-AU" sz="1000" dirty="0"><a:solidFill><a:srgbClr val="45625B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Horizon ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)}`)}</a:t></a:r></a:p>
         </p:txBody>
       </p:sp>
       <p:pic>
-        <p:nvPicPr><p:cNvPr id="5" name="Roadmap Image"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
-        <p:blipFill><a:blip r:embed="rId2"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
+        <p:nvPicPr><p:cNvPr id="4" name="Roadmap Image"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
+        <p:blipFill><a:blip r:embed="rId2"/><a:srcRect l="0" t="0" r="0" b="0"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
         <p:spPr>
-          <a:xfrm><a:off x="3886200" y="1600200"/><a:ext cx="7772400" cy="4114800"/></a:xfrm>
+          <a:xfrm><a:off x="228600" y="1463040"/><a:ext cx="11658600" cy="5029200"/></a:xfrm>
           <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
         </p:spPr>
       </p:pic>
@@ -4839,6 +4845,59 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"/>
+</Relationships>`
+    },
+    {
+      name: "ppt/notesMasters/notesMaster1.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:notesMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld name="Notes Master">
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk2"/>
+  <p:hf sldNum="0" hdr="0" ftr="0" dt="1"/>
+  <p:notesStyle/>
+</p:notesMaster>`
+    },
+    {
+      name: "ppt/notesMasters/_rels/notesMaster1.xml.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
+</Relationships>`
+    },
+    {
+      name: "ppt/notesSlides/notesSlide1.xml",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<p:notes xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld name="Notes Slide">
+    <p:spTree>
+      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
+      <p:grpSpPr/>
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder"/><p:cNvSpPr txBox="1"/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>
+        <p:spPr><a:xfrm><a:off x="685800" y="914400"/><a:ext cx="5486400" cy="7315200"/></a:xfrm></p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square"/>
+          <a:lstStyle/>
+          ${notesText.split("\n").map((line, idx) => `<a:p>${idx === 0 || idx === 3 ? `<a:r><a:rPr lang="en-AU" sz="1400" b="1"/><a:t>${xmlEscape(line)}</a:t></a:r>` : line ? `<a:r><a:rPr lang="en-AU" sz="1000"/><a:t>${xmlEscape(line)}</a:t></a:r>` : ""}</a:p>`).join("")}
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+  </p:cSld>
+  <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
+</p:notes>`
+    },
+    {
+      name: "ppt/notesSlides/_rels/notesSlide1.xml.rels",
+      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="../notesMasters/notesMaster1.xml"/>
+  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide1.xml"/>
 </Relationships>`
     },
     { name: "ppt/media/image1.png", data: imageBytes }
@@ -4856,23 +4915,23 @@ function buildRoadmapCanvas(assessment) {
   const canvas = document.createElement("canvas");
   canvas.width = 1600;
   canvas.height = 1132;
-  const margin = 42;
+  const margin = 34;
   const frameX = margin;
   const frameY = 156;
   const frameW = canvas.width - (margin * 2);
-  const frameH = canvas.height - frameY - 64;
+  const frameH = canvas.height - frameY - 48;
   const headerH = 132;
   const innerPad = 18;
-  const titleColW = 640;
-  const timelineColX = frameX + titleColW + 46;
+  const titleColW = 690;
+  const timelineColX = frameX + titleColW + 28;
   const axisLeft = timelineColX;
-  const axisRight = frameX + frameW - 34;
+  const axisRight = frameX + frameW - 26;
   const axisWidth = axisRight - axisLeft;
   const axisY = frameY + 98;
-  const rowTop = axisY + 34;
+  const rowTop = axisY + 42;
   const rowHeight = 82;
-  const rowGap = 94;
-  const bottomPadding = 82;
+  const rowGap = 92;
+  const bottomPadding = 112;
   const maxRows = Math.max(4, Math.floor((frameH - (rowTop - frameY) - bottomPadding) / rowGap));
   const items = timeline.items.slice(0, maxRows);
   const ctx = canvas.getContext("2d");
@@ -4951,6 +5010,12 @@ function buildRoadmapCanvas(assessment) {
     }
     ctx.restore();
   };
+  const priorityBadge = (priority, criticalPath) => {
+    if (criticalPath) return { text: "Critical", fill: "#fde8e8", ink: "#cc3a3a", icon: "critical" };
+    if (priority === "High") return { text: "High", fill: "#fde8e8", ink: "#cc3a3a", icon: "checkpoint" };
+    if (priority === "Medium") return { text: "Medium", fill: "#fbf2df", ink: "#b97a2f", icon: "checkpoint" };
+    return { text: "Low", fill: "#e7f6eb", ink: "#2a8d4a", icon: "checkpoint" };
+  };
   ctx.fillStyle = "#edf3ef";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   const grad = ctx.createLinearGradient(0, 0, canvas.width, 0);
@@ -5012,7 +5077,7 @@ function buildRoadmapCanvas(assessment) {
   ctx.fillStyle = "#4b6660";
   ctx.font = "600 14px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText("Timeline", axisLeft, frameY + 26);
-  drawRoundRect(frameX + innerPad, frameY + 18, 358, 48, 12, "#eef5f1", "#d2dfd9");
+  drawRoundRect(frameX + innerPad, frameY + 18, 430, 48, 12, "#eef5f1", "#d2dfd9");
   ctx.fillStyle = "#4b6660";
   ctx.font = "700 13px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText("Milestone legend", frameX + innerPad + 14, frameY + 37);
@@ -5020,9 +5085,9 @@ function buildRoadmapCanvas(assessment) {
   ctx.font = "500 12px 'Avenir Next', 'Segoe UI', sans-serif";
   ctx.fillText("Start", frameX + innerPad + 38, frameY + 56);
   drawMilestoneIcon("checkpoint", frameX + innerPad + 116, frameY + 52, "#b97a2f");
-  ctx.fillText("Checkpoint", frameX + innerPad + 128, frameY + 56);
-  drawMilestoneIcon("critical", frameX + innerPad + 244, frameY + 52, "#cc3a3a");
-  ctx.fillText("Critical path", frameX + innerPad + 256, frameY + 56);
+  ctx.fillText("Priority", frameX + innerPad + 128, frameY + 56);
+  drawMilestoneIcon("critical", frameX + innerPad + 220, frameY + 52, "#cc3a3a");
+  ctx.fillText("Critical path", frameX + innerPad + 232, frameY + 56);
 
   ctx.strokeStyle = "#aec8bd";
   ctx.lineWidth = 2;
@@ -5039,12 +5104,13 @@ function buildRoadmapCanvas(assessment) {
     ctx.stroke();
     const textX = Math.max(axisLeft, Math.min(axisRight - marker.labelWidth, marker.x - (marker.labelWidth / 2)));
     ctx.fillStyle = "#4f6962";
-    ctx.fillText(marker.label, textX, axisY - 16);
+    ctx.fillText(marker.label, textX, axisY - (idx % 2 === 0 ? 18 : 4));
   });
 
   let y = rowTop;
   items.forEach((r, i) => {
     const pColor = r.priority === "High" ? "#cc3a3a" : r.priority === "Medium" ? "#c18428" : "#2a8d4a";
+    const badge = priorityBadge(r.priority, r.criticalPath);
     const startX = axisLeft + Math.round((r.startWeekScaled / timeline.planningWeeks) * axisWidth);
     const endX = axisLeft + Math.round((r.endWeekScaled / timeline.planningWeeks) * axisWidth);
     drawRoundRect(frameX, y - 22, frameW, rowHeight, 12, "#ffffff", "#d6e3dd");
@@ -5059,23 +5125,23 @@ function buildRoadmapCanvas(assessment) {
     drawRoundRect(axisLeft, y + 10, axisWidth, 18, 9, "#e9f0ec", null);
     ctx.fillStyle = pColor;
     drawRoundRect(startX, y + 10, Math.max(18, endX - startX), 18, 9, pColor, null);
-    const pillText = `${r.priority}${r.criticalPath ? " | critical path" : ""}`;
     ctx.font = "700 14px 'Avenir Next', 'Segoe UI', sans-serif";
-    const pillWidth = ctx.measureText(pillText).width + 26;
-    const pillX = Math.max(axisLeft, axisRight - pillWidth);
-    drawRoundRect(pillX, y + 34, pillWidth, 22, 11, pColor === "#cc3a3a" ? "#fde8e8" : pColor === "#c18428" ? "#fbf2df" : "#e7f6eb", null);
-    ctx.fillStyle = pColor;
-    ctx.fillText(pillText, pillX + 13, y + 49);
+    const pillWidth = Math.max(64, ctx.measureText(badge.text).width + 34);
+    const pillX = axisRight - pillWidth;
+    drawRoundRect(pillX, y + 34, pillWidth, 22, 11, badge.fill, null);
+    drawMilestoneIcon(badge.icon, pillX + 12, y + 45, badge.ink);
+    ctx.fillStyle = badge.ink;
+    ctx.fillText(badge.text, pillX + 22, y + 49);
     y += rowGap;
   });
 
   const notes = `Constraint notes: ${timeline.constraintNotes}${timeline.compressed ? " | Timeline compressed to fit selected horizon." : ""}`;
-  const noteBoxY = canvas.height - 70;
-  drawRoundRect(frameX, noteBoxY - 26, frameW, 42, 10, "#edf4f0", "#d6e2dc");
+  const noteBoxY = canvas.height - 82;
+  drawRoundRect(frameX, noteBoxY - 34, frameW, 56, 10, "#edf4f0", "#d6e2dc");
   ctx.fillStyle = "#4d6861";
-  ctx.font = "500 14px 'Avenir Next', 'Segoe UI', sans-serif";
-  wrapText(notes, frameW - 28).slice(0, 2).forEach((line, idx) => {
-    ctx.fillText(line, frameX + 14, noteBoxY - 2 + (idx * 16));
+  ctx.font = "500 13px 'Avenir Next', 'Segoe UI', sans-serif";
+  wrapText(notes, frameW - 30).slice(0, 2).forEach((line, idx) => {
+    ctx.fillText(line, frameX + 14, noteBoxY - 8 + (idx * 16));
   });
   return canvas;
 }
