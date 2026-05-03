@@ -101,7 +101,7 @@ python3 -m unittest -v tests.test_server
 
 Standalone browser test page:
 
-- Open `/Users/amair/Documents/align42/tests.html`
+- Open `tests.html`
 - Run `Core`, `Dependency`, or `All` suites and view pass/fail details on screen.
 
 ## AI settings behavior
