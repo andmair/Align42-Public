@@ -114,6 +114,25 @@ Standalone browser test page:
 - AI settings include provider setup documentation links that open in a new tab.
 - Diagnostics are hidden by default in an accordion and can be exported as JSON.
 
+### How AI mode changes application behavior
+
+When AI mode is enabled in **Advanced** mode, Align42 uses the configured AI provider to support deeper interpretation and tailoring of assessment content. In practice, this means:
+
+- uploaded content in selected business-context fields can be summarized with AI rather than local-only heuristics
+- examples, questions, and guidance can be personalized more directly using the organisation context provided in the assessment
+- delegated-response mapping can use AI assistance for less structured pasted email responses
+- AI-driven interpretation can be used to generate more relevant insights and stronger recommendation detail
+- provider diagnostics are recorded locally so connection and request issues can be reviewed
+
+When AI mode is disabled, or when the user is working in **Simple** mode:
+
+- the app uses local logic and heuristics only
+- no AI provider requests are made
+- AI-assisted mapping, interpretation, and enhanced personalization are not used
+- Simple mode always keeps AI mode turned off, even if AI settings were previously configured
+
+Before sending content to an AI provider, Align42 attempts to mask sensitive information. Even so, users are prompted to acknowledge the AI disclaimer before saving AI settings, and should confirm that any connected provider is acceptable under their organisation's AI and data security policy.
+
 ## Email behavior
 
 - Align42 creates `mailto:` drafts in the default local email client.
