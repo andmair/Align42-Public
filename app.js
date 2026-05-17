@@ -4530,7 +4530,7 @@ function createStoredZip(entries) {
     const dataBytes = typeof entry.data === "string" ? encoder.encode(entry.data) : entry.data;
     const checksum = crc32(dataBytes);
     const { dosTime, dosDate } = dosDateTimeParts(entry.date || new Date());
-    return { nameBytes, dataBytes, checksum, dosTime, dosDate };
+    return { nameBytes, dataBytes, checksum, dosTime, dosDate, name: entry.name };
   });
 
   const localParts = [];
@@ -4538,42 +4538,44 @@ function createStoredZip(entries) {
   let offset = 0;
 
   for (const file of files) {
+    // Compression method 0 = stored (no compression)
     const local = new Uint8Array(30 + file.nameBytes.length + file.dataBytes.length);
     const view = new DataView(local.buffer);
-    view.setUint32(0, 0x04034B50, true);
-    view.setUint16(4, 20, true);
-    view.setUint16(6, 0, true);
-    view.setUint16(8, 0, true);
-    view.setUint16(10, file.dosTime, true);
-    view.setUint16(12, file.dosDate, true);
-    view.setUint32(14, file.checksum, true);
-    view.setUint32(18, file.dataBytes.length, true);
-    view.setUint32(22, file.dataBytes.length, true);
-    view.setUint16(26, file.nameBytes.length, true);
-    view.setUint16(28, 0, true);
+    view.setUint32(0, 0x04034B50, true); // Local file header signature
+    view.setUint16(4, 20, true); // Version needed to extract
+    view.setUint16(6, 0, true); // General purpose bit flag (no encryption, no compression)
+    view.setUint16(8, 0, true); // Compression method: 0 = stored
+    view.setUint16(10, file.dosTime, true); // File modification time
+    view.setUint16(12, file.dosDate, true); // File modification date
+    view.setUint32(14, file.checksum, true); // CRC-32
+    view.setUint32(18, file.dataBytes.length, true); // Compressed size
+    view.setUint32(22, file.dataBytes.length, true); // Uncompressed size
+    view.setUint16(26, file.nameBytes.length, true); // File name length
+    view.setUint16(28, 0, true); // Extra field length
     local.set(file.nameBytes, 30);
     local.set(file.dataBytes, 30 + file.nameBytes.length);
     localParts.push(local);
 
+    // Central directory file header
     const central = new Uint8Array(46 + file.nameBytes.length);
     const cview = new DataView(central.buffer);
-    cview.setUint32(0, 0x02014B50, true);
-    cview.setUint16(4, 20, true);
-    cview.setUint16(6, 20, true);
-    cview.setUint16(8, 0, true);
-    cview.setUint16(10, 0, true);
-    cview.setUint16(12, file.dosTime, true);
-    cview.setUint16(14, file.dosDate, true);
-    cview.setUint32(16, file.checksum, true);
-    cview.setUint32(20, file.dataBytes.length, true);
-    cview.setUint32(24, file.dataBytes.length, true);
-    cview.setUint16(28, file.nameBytes.length, true);
-    cview.setUint16(30, 0, true);
-    cview.setUint16(32, 0, true);
-    cview.setUint16(34, 0, true);
-    cview.setUint16(36, 0, true);
-    cview.setUint32(38, 0, true);
-    cview.setUint32(42, offset, true);
+    cview.setUint32(0, 0x02014B50, true); // Central file header signature
+    cview.setUint16(4, 20, true); // Version made by
+    cview.setUint16(6, 20, true); // Version needed to extract
+    cview.setUint16(8, 0, true); // General purpose bit flag
+    cview.setUint16(10, 0, true); // Compression method: 0 = stored
+    cview.setUint16(12, file.dosTime, true); // File modification time
+    cview.setUint16(14, file.dosDate, true); // File modification date
+    cview.setUint32(16, file.checksum, true); // CRC-32
+    cview.setUint32(20, file.dataBytes.length, true); // Compressed size
+    cview.setUint32(24, file.dataBytes.length, true); // Uncompressed size
+    cview.setUint16(28, file.nameBytes.length, true); // File name length
+    cview.setUint16(30, 0, true); // Extra field length
+    cview.setUint16(32, 0, true); // File comment length
+    cview.setUint16(34, 0, true); // Disk number start
+    cview.setUint16(36, 0, true); // Internal file attributes
+    cview.setUint32(38, 0, true); // External file attributes
+    cview.setUint32(42, offset, true); // Relative offset of local file header
     central.set(file.nameBytes, 46);
     centralParts.push(central);
 
@@ -4584,14 +4586,14 @@ function createStoredZip(entries) {
   const locals = concatUint8Arrays(localParts);
   const end = new Uint8Array(22);
   const eview = new DataView(end.buffer);
-  eview.setUint32(0, 0x06054B50, true);
-  eview.setUint16(4, 0, true);
-  eview.setUint16(6, 0, true);
-  eview.setUint16(8, files.length, true);
-  eview.setUint16(10, files.length, true);
-  eview.setUint32(12, centralDir.length, true);
-  eview.setUint32(16, locals.length, true);
-  eview.setUint16(20, 0, true);
+  eview.setUint32(0, 0x06054B50, true); // End of central directory signature
+  eview.setUint16(4, 0, true); // Disk number
+  eview.setUint16(6, 0, true); // Disk with central directory
+  eview.setUint16(8, files.length, true); // Number of entries in this disk
+  eview.setUint16(10, files.length, true); // Total entries
+  eview.setUint32(12, centralDir.length, true); // Size of central directory
+  eview.setUint32(16, locals.length, true); // Offset of central directory
+  eview.setUint16(20, 0, true); // Comment length
   return concatUint8Arrays([locals, centralDir, end]);
 }
 
