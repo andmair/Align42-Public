@@ -6,11 +6,20 @@ from pathlib import Path
 import server
 
 
+class AllowAllLimiter:
+    def is_allowed(self, key):
+        return True
+
+
 class HeaderCaptureHandler:
     def __init__(self):
         self.status = None
         self.headers = {}
         self.wfile = io.BytesIO()
+        self.path = "/"
+        self.client_address = ("127.0.0.1", 12345)
+        self.headers_in = {}
+        self.general_limiter = AllowAllLimiter()
 
     def send_response(self, status):
         self.status = status
@@ -18,12 +27,23 @@ class HeaderCaptureHandler:
     def send_header(self, key, value):
         self.headers[key] = value
 
+    @property
+    def headers(self):
+        return getattr(self, "_headers", {})
+
+    @headers.setter
+    def headers(self, value):
+        self._headers = value
+
     def end_headers(self):
-        self.add_standard_headers()
+        self.add_security_headers()
         return None
 
-    def add_standard_headers(self):
-        server.Handler.add_standard_headers(self)
+    def add_security_headers(self):
+        server.Handler.add_security_headers(self)
+
+    def get_client_ip(self):
+        return "127.0.0.1"
 
     def send_json(self, status, payload):
         server.Handler.send_json(self, status, payload)
@@ -32,7 +52,7 @@ class HeaderCaptureHandler:
 class TestServerStaticDelivery(unittest.TestCase):
     def test_csp_includes_supported_provider_domains(self):
         capture = HeaderCaptureHandler()
-        server.Handler.add_standard_headers(capture)
+        server.Handler.add_security_headers(capture)
         csp = capture.headers.get("Content-Security-Policy", "")
         self.assertIn("https://api.openai.com", csp)
         self.assertIn("https://api.anthropic.com", csp)
