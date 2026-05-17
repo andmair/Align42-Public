@@ -4598,33 +4598,238 @@ function createStoredZip(entries) {
 }
 
 function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) {
+  void roadmapDataUrl;
   const preparedFor = state.profile?.name || "User";
   const orgDisplay = assessment.data.context?.orgName || "Organisation";
   const approachLabel = assessment.data.preferredApproach === "optimal" ? "Optimal" : "Fastest";
   const timeline = roadmapTimeline(assessment, roadmapRows(assessment));
   const generatedAt = new Date().toISOString();
-  const imageBytes = dataUrlToBytes(roadmapDataUrl);
-  const summaryLines = actionPlan.slice(0, 6).map((a, i) => `${i + 1}. ${a.control} - ${a.window} (Owner: ${a.owner})`).join("\n");
-  const detailLines = timelineRows.slice(0, 6).map((r) => `• ${r.control}\n  From: ${r.startLabel}\n  To: ${r.endLabel}\n`).join("\n");
-  const notesText = [
-    "EDITABLE ROADMAP DATA",
-    "",
-    "Organisation: " + orgDisplay,
-    "Prepared for: " + preparedFor,
-    "Approach: " + approachLabel,
-    "Scenario: " + timeline.scenarioLabel,
-    "",
-    "PRIORITY ACTIONS (Editable - Copy to table or shapes)",
-    summaryLines || "No priority action summary available.",
-    "",
-    "ROADMAP TIMELINE (Editable - Copy to table or timeline)",
-    detailLines || "No additional timeline notes available.",
-    "",
-    "INSTRUCTIONS FOR EDITING:",
-    "1. Right-click on the roadmap image to replace it with your editable version",
-    "2. Or, select the data above and create a new table or timeline shapes",
-    "3. All dates and control names are listed in the notes for easy reference"
-  ].join("\n");
+  const slideRows = timelineRows.slice(0, 7);
+  const actionRows = actionPlan.slice(0, 8);
+
+  const px = (n) => Math.round(n * 9525);
+  const colors = {
+    text: "16312B",
+    textMuted: "45625B",
+    green: "0D7F60",
+    greenSoft: "EEF5F1",
+    greenLine: "C9DDD6",
+    amber: "B97A2F",
+    amberSoft: "F4EADF",
+    red: "C73B3B",
+    redSoft: "F7E6E6",
+    white: "FFFFFF",
+    axis: "8BA49A",
+    timelineBg: "E8F0EC"
+  };
+
+  let shapeId = 2;
+  const nextId = () => shapeId++;
+  const pct = (v) => Math.max(0, Math.min(1, v));
+
+  const paragraphsXml = (paragraphs, base = {}) => paragraphs.map((p) => {
+    const size = p.size || base.size || 1100;
+    const color = p.color || base.color || colors.text;
+    const align = p.align || base.align || "l";
+    const bold = p.bold ?? base.bold ?? false;
+    return `<a:p><a:pPr algn="${align}"/>${p.text ? `<a:r><a:rPr lang="en-AU" sz="${size}"${bold ? ' b="1"' : ""}><a:solidFill><a:srgbClr val="${color}"/></a:solidFill></a:rPr><a:t>${xmlEscape(p.text)}</a:t></a:r>` : ""}</a:p>`;
+  }).join("");
+
+  const textShapeXml = ({ name, x, y, cx, cy, paragraphs, fill = null, line = null, inset = 10, anchor = "t" }) => `
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="${nextId()}" name="${xmlEscape(name)}"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>
+          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
+          ${fill ? `<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>` : "<a:noFill/>"}
+          ${line ? `<a:ln w="9525"><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln>` : "<a:ln><a:noFill/></a:ln>"}
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" anchor="${anchor}" lIns="${px(inset)}" rIns="${px(inset)}" tIns="${px(Math.max(6, inset - 2))}" bIns="${px(Math.max(4, inset - 4))}"/>
+          <a:lstStyle/>
+          ${paragraphsXml(paragraphs)}
+        </p:txBody>
+      </p:sp>`;
+
+  const shapeXml = ({ name, x, y, cx, cy, fill = null, line = null, prst = "rect" }) => `
+      <p:sp>
+        <p:nvSpPr><p:cNvPr id="${nextId()}" name="${xmlEscape(name)}"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
+        <p:spPr>
+          <a:xfrm><a:off x="${x}" y="${y}"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>
+          <a:prstGeom prst="${prst}"><a:avLst/></a:prstGeom>
+          ${fill ? `<a:solidFill><a:srgbClr val="${fill}"/></a:solidFill>` : "<a:noFill/>"}
+          ${line ? `<a:ln w="9525"><a:solidFill><a:srgbClr val="${line}"/></a:solidFill></a:ln>` : "<a:ln><a:noFill/></a:ln>"}
+        </p:spPr>
+        <p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody>
+      </p:sp>`;
+
+  const slide1Parts = [];
+  const add1 = (xml) => slide1Parts.push(xml);
+
+  add1(shapeXml({ name: "Header Band", x: 0, y: 0, cx: 12192000, cy: 1000000, fill: colors.green }));
+  add1(textShapeXml({
+    name: "Roadmap Title",
+    x: 304800, y: 180000, cx: 11582400, cy: 300000,
+    paragraphs: [{ text: `Align42 Roadmap for ${orgDisplay}`, size: 2600, bold: true, color: colors.white }]
+  }));
+  add1(textShapeXml({
+    name: "Roadmap Subtitle",
+    x: 304800, y: 520000, cx: 11582400, cy: 320000,
+    paragraphs: [
+      { text: `Prepared for ${preparedFor} | ${approachLabel} approach | ${timeline.scenarioLabel}`, size: 1200, bold: true, color: colors.white },
+      { text: `Horizon ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)} | Target ${assessment.data.context?.targetDate || "12 months"}`, size: 1000, color: "E8F6F0" }
+    ]
+  }));
+
+  const contentLeft = 304800;
+  const contentRight = 11887200;
+  const textColWidth = 3657600;
+  const gap = 190500;
+  const timelineX = contentLeft + textColWidth + gap;
+  const timelineWidth = 5667360;
+  const badgeWidth = 1143000;
+  const badgeX = timelineX + timelineWidth + gap;
+  const innerRight = badgeX + badgeWidth;
+  const topY = 1280000;
+
+  add1(textShapeXml({
+    name: "Column Header Left",
+    x: contentLeft, y: topY, cx: textColWidth, cy: 210000,
+    paragraphs: [{ text: "Priority controls and ownership", size: 980, bold: true, color: colors.textMuted }]
+  }));
+  add1(textShapeXml({
+    name: "Column Header Middle",
+    x: timelineX, y: topY, cx: timelineWidth, cy: 210000,
+    paragraphs: [{ text: "Timeline and milestones", size: 980, bold: true, color: colors.textMuted, align: "ctr" }]
+  }));
+  add1(textShapeXml({
+    name: "Column Header Right",
+    x: badgeX, y: topY, cx: badgeWidth, cy: 210000,
+    paragraphs: [{ text: "Priority", size: 980, bold: true, color: colors.textMuted, align: "ctr" }]
+  }));
+
+  const axisY = topY + 230000;
+  add1(shapeXml({ name: "Timeline Axis", x: timelineX, y: axisY + 70000, cx: timelineWidth, cy: 9525, fill: colors.axis }));
+  const axisLabels = [];
+  const start = timeline.horizonStart;
+  const totalMs = Math.max(1, timeline.horizonEnd.getTime() - start.getTime());
+  for (let d = new Date(start.getFullYear(), start.getMonth(), 1); d <= timeline.horizonEnd; d = new Date(d.getFullYear(), d.getMonth() + 3, 1)) {
+    const ratio = pct((d.getTime() - start.getTime()) / totalMs);
+    const tickX = timelineX + Math.round(timelineWidth * ratio);
+    add1(shapeXml({ name: `Tick ${d.toISOString()}`, x: tickX, y: axisY + 20000, cx: 9525, cy: 50000, fill: colors.axis }));
+    axisLabels.push(textShapeXml({
+      name: `Axis Label ${d.toISOString()}`,
+      x: Math.max(timelineX, tickX - 150000), y: axisY - 120000 + ((axisLabels.length % 2) * 70000), cx: 350000, cy: 120000,
+      paragraphs: [{ text: d.toLocaleDateString(undefined, { month: "short", year: "2-digit" }), size: 880, color: colors.textMuted, align: "ctr" }]
+    }));
+  }
+  axisLabels.forEach(add1);
+
+  const rowTop = axisY + 180000;
+  const rowHeight = 640000;
+  const rowGap = 90000;
+  const totalWeeks = Math.max(1, timeline.planningWeeks);
+
+  slideRows.forEach((row, idx) => {
+    const y = rowTop + idx * (rowHeight + rowGap);
+    const startRatio = pct(row.startWeekScaled / totalWeeks);
+    const endRatio = pct(row.endWeekScaled / totalWeeks);
+    const barX = timelineX + Math.round(timelineWidth * startRatio);
+    const barWidth = Math.max(px(14), Math.round(timelineWidth * Math.max(0.04, endRatio - startRatio)));
+    const iconY = y + 170000;
+    const iconSize = 90000;
+    const milestoneShape = row.criticalPath ? "diamond" : "ellipse";
+    const milestoneColor = row.priority === "High" ? colors.red : row.priority === "Medium" ? colors.amber : colors.green;
+    const badgeFill = row.priority === "High" ? colors.redSoft : row.priority === "Medium" ? colors.amberSoft : colors.greenSoft;
+
+    add1(textShapeXml({
+      name: `Row Card ${idx + 1}`,
+      x: contentLeft, y, cx: textColWidth, cy: rowHeight,
+      fill: colors.greenSoft, line: colors.greenLine, inset: 12,
+      paragraphs: [
+        { text: `${idx + 1}. ${row.control}`, size: 1420, bold: true, color: colors.text },
+        { text: `${row.clause} | Owner: ${row.owner}`, size: 980, color: colors.textMuted },
+        { text: `${row.startLabel} to ${row.endLabel}`, size: 940, color: colors.textMuted }
+      ]
+    }));
+    add1(shapeXml({ name: `Track ${idx + 1}`, x: timelineX, y: y + 220000, cx: timelineWidth, cy: 160000, fill: colors.timelineBg, line: colors.greenLine }));
+    add1(shapeXml({ name: `Bar ${idx + 1}`, x: barX, y: y + 220000, cx: barWidth, cy: 160000, fill: milestoneColor }));
+    add1(shapeXml({ name: `Start Icon ${idx + 1}`, x: Math.max(timelineX, barX - px(10)), y: iconY, cx: iconSize, cy: iconSize, fill: colors.white, line: milestoneColor, prst: "ellipse" }));
+    add1(shapeXml({ name: `Milestone ${idx + 1}`, x: barX + Math.max(px(18), barWidth - iconSize), y: iconY, cx: iconSize, cy: iconSize, fill: milestoneColor, prst: milestoneShape }));
+    add1(textShapeXml({
+      name: `Badge ${idx + 1}`,
+      x: badgeX, y: y + 150000, cx: badgeWidth, cy: 240000,
+      fill: badgeFill, line: milestoneColor, inset: 6,
+      paragraphs: [{ text: row.priority, size: 940, bold: true, color: milestoneColor, align: "ctr" }],
+      anchor: "ctr"
+    }));
+    add1(textShapeXml({
+      name: `Badge Note ${idx + 1}`,
+      x: badgeX, y: y + 380000, cx: badgeWidth, cy: 140000,
+      paragraphs: [{ text: row.criticalPath ? "Critical path" : "Standard path", size: 760, color: colors.textMuted, align: "ctr" }]
+    }));
+  });
+
+  const legendY = rowTop + slideRows.length * (rowHeight + rowGap) + 10000;
+  add1(textShapeXml({
+    name: "Legend Box",
+    x: contentLeft, y: legendY, cx: innerRight - contentLeft, cy: 360000,
+    fill: colors.white, line: colors.greenLine, inset: 12,
+    paragraphs: [
+      { text: "Legend: open circle = start point | filled marker = main milestone | diamond = critical path checkpoint | editable text and bars can be resized in PowerPoint", size: 900, color: colors.textMuted }
+    ]
+  }));
+
+  shapeId = 2;
+  const slide2Parts = [];
+  const add2 = (xml) => slide2Parts.push(xml);
+  add2(shapeXml({ name: "Summary Header Band", x: 0, y: 0, cx: 12192000, cy: 900000, fill: colors.green }));
+  add2(textShapeXml({
+    name: "Summary Title",
+    x: 304800, y: 180000, cx: 11582400, cy: 260000,
+    paragraphs: [{ text: `Priority Action Summary for ${orgDisplay}`, size: 2400, bold: true, color: colors.white }]
+  }));
+  add2(textShapeXml({
+    name: "Summary Subtitle",
+    x: 304800, y: 500000, cx: 11582400, cy: 200000,
+    paragraphs: [{ text: `Prepared for ${preparedFor} on ${formatDateShort(new Date())}`, size: 1000, color: "E8F6F0" }]
+  }));
+
+  const tableX = 304800;
+  const tableY = 1180000;
+  const col1 = 450000;
+  const col2 = 3400000;
+  const col3 = 1800000;
+  const col4 = 2100000;
+  const col5 = 3680000;
+  const headerHeight = 260000;
+  const actionRowHeight = 480000;
+  const tableWidth = col1 + col2 + col3 + col4 + col5;
+
+  add2(textShapeXml({
+    name: "Summary Table Header",
+    x: tableX, y: tableY, cx: tableWidth, cy: headerHeight,
+    fill: colors.greenSoft, line: colors.greenLine, inset: 8,
+    paragraphs: [{ text: "Priority actions for implementation planning", size: 1100, bold: true, color: colors.text }]
+  }));
+
+  actionRows.forEach((row, idx) => {
+    const y = tableY + headerHeight + idx * actionRowHeight;
+    const fill = idx % 2 === 0 ? colors.white : "F8FBF9";
+    const priColor = row.priority === "High" ? colors.red : row.priority === "Medium" ? colors.amber : colors.green;
+    add2(textShapeXml({ name: `Index ${idx + 1}`, x: tableX, y, cx: col1, cy: actionRowHeight, fill, line: colors.greenLine, inset: 8, paragraphs: [{ text: `${idx + 1}`, size: 920, bold: true, color: colors.text, align: "ctr" }], anchor: "ctr" }));
+    add2(textShapeXml({ name: `Control ${idx + 1}`, x: tableX + col1, y, cx: col2, cy: actionRowHeight, fill, line: colors.greenLine, inset: 8, paragraphs: [{ text: row.control, size: 980, bold: true, color: colors.text }, { text: row.clause, size: 820, color: colors.textMuted }] }));
+    add2(textShapeXml({ name: `Owner ${idx + 1}`, x: tableX + col1 + col2, y, cx: col3, cy: actionRowHeight, fill, line: colors.greenLine, inset: 8, paragraphs: [{ text: row.owner, size: 900, color: colors.text }] }));
+    add2(textShapeXml({ name: `Window ${idx + 1}`, x: tableX + col1 + col2 + col3, y, cx: col4, cy: actionRowHeight, fill, line: colors.greenLine, inset: 8, paragraphs: [{ text: row.window, size: 900, color: colors.text }] }));
+    add2(textShapeXml({ name: `Priority ${idx + 1}`, x: tableX + col1 + col2 + col3 + col4, y, cx: col5, cy: actionRowHeight, fill, line: colors.greenLine, inset: 8, paragraphs: [{ text: `${row.priority} priority | ${row.rationale || row.fastest || ""}`.trim(), size: 860, color: priColor }] }));
+  });
+
+  add2(textShapeXml({
+    name: "Summary Footer",
+    x: 304800, y: 5900000, cx: 11582400, cy: 420000,
+    fill: colors.amberSoft, line: colors.amber, inset: 10,
+    paragraphs: [{ text: "This slide is fully editable. Update action wording, owners, and time windows directly in PowerPoint as your roadmap is refined.", size: 920, color: colors.textMuted }]
+  }));
 
   const entries = [
     {
@@ -4633,13 +4838,11 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
-  <Default Extension="png" ContentType="image/png"/>
   <Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>
   <Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
+  <Override PartName="/ppt/slides/slide2.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>
   <Override PartName="/ppt/slideLayouts/slideLayout1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>
   <Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>
-  <Override PartName="/ppt/notesSlides/notesSlide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesSlide+xml"/>
-  <Override PartName="/ppt/notesMasters/notesMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>
   <Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>
   <Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>
   <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
@@ -4674,10 +4877,10 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 <Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">
   <Application>Microsoft Office PowerPoint</Application>
   <PresentationFormat>On-screen Show (16:9)</PresentationFormat>
-  <Slides>1</Slides>
+  <Slides>2</Slides>
   <Notes>0</Notes>
   <HiddenSlides>0</HiddenSlides>
-  <MMClips>1</MMClips>
+  <MMClips>0</MMClips>
   <ScaleCrop>false</ScaleCrop>
   <HeadingPairs>
     <vt:vector size="2" baseType="variant">
@@ -4686,8 +4889,9 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
     </vt:vector>
   </HeadingPairs>
   <TitlesOfParts>
-    <vt:vector size="1" baseType="lpstr">
+    <vt:vector size="2" baseType="lpstr">
       <vt:lpstr>Align42 Roadmap</vt:lpstr>
+      <vt:lpstr>Priority Action Summary</vt:lpstr>
     </vt:vector>
   </TitlesOfParts>
 </Properties>`
@@ -4697,8 +4901,10 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:presentation xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" saveSubsetFonts="1" autoCompressPictures="0">
   <p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>
-  <p:sldIdLst><p:sldId id="256" r:id="rId2"/></p:sldIdLst>
-  <p:notesMasterIdLst><p:notesMasterId r:id="rId3"/></p:notesMasterIdLst>
+  <p:sldIdLst>
+    <p:sldId id="256" r:id="rId2"/>
+    <p:sldId id="257" r:id="rId3"/>
+  </p:sldIdLst>
   <p:sldSz cx="12192000" cy="6858000"/>
   <p:notesSz cx="6858000" cy="9144000"/>
   <p:defaultTextStyle>
@@ -4715,7 +4921,7 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>
   <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="notesMasters/notesMaster1.xml"/>
+  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide2.xml"/>
 </Relationships>`
     },
     {
@@ -4816,38 +5022,12 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
       name: "ppt/slides/slide1.xml",
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld>
+  <p:cSld name="Roadmap">
     <p:bg><p:bgRef idx="1001"><a:schemeClr val="lt1"/></p:bgRef></p:bg>
     <p:spTree>
       <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
       <p:grpSpPr/>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="228600" y="228600"/><a:ext cx="11658600" cy="548640"/></a:xfrm></p:spPr>
-        <p:txBody>
-          <a:bodyPr anchor="ctr"/>
-          <a:lstStyle/>
-          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-AU" sz="2400" b="1" dirty="0"/><a:t>${xmlEscape(`Align42 Roadmap for ${orgDisplay}`)}</a:t></a:r></a:p>
-        </p:txBody>
-      </p:sp>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="3" name="Subtitle"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="228600" y="822960"/><a:ext cx="11658600" cy="548640"/></a:xfrm></p:spPr>
-        <p:txBody>
-          <a:bodyPr anchor="ctr"/>
-          <a:lstStyle/>
-          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-AU" sz="1200" b="1" dirty="0"><a:solidFill><a:srgbClr val="0D594B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Prepared for ${preparedFor} | ${approachLabel} approach | ${timeline.scenarioLabel}`)}</a:t></a:r></a:p>
-          <a:p><a:pPr algn="ctr"/><a:r><a:rPr lang="en-AU" sz="1000" dirty="0"><a:solidFill><a:srgbClr val="45625B"/></a:solidFill></a:rPr><a:t>${xmlEscape(`Horizon ${formatDateShort(timeline.horizonStart)} to ${formatDateShort(timeline.horizonEnd)}`)}</a:t></a:r></a:p>
-        </p:txBody>
-      </p:sp>
-      <p:pic>
-        <p:nvPicPr><p:cNvPr id="4" name="Roadmap Image"/><p:cNvPicPr/><p:nvPr/></p:nvPicPr>
-        <p:blipFill><a:blip r:embed="rId2"/><a:srcRect l="0" t="0" r="0" b="0"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>
-        <p:spPr>
-          <a:xfrm><a:off x="228600" y="1463040"/><a:ext cx="11658600" cy="5029200"/></a:xfrm>
-          <a:prstGeom prst="rect"><a:avLst/></a:prstGeom>
-        </p:spPr>
-      </p:pic>
+      ${slide1Parts.join("")}
     </p:spTree>
   </p:cSld>
   <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
@@ -4858,63 +5038,30 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image1.png"/>
-  <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"/>
 </Relationships>`
     },
     {
-      name: "ppt/notesMasters/notesMaster1.xml",
+      name: "ppt/slides/slide2.xml",
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:notesMaster xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld name="Notes Master">
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld name="Priority Action Summary">
+    <p:bg><p:bgRef idx="1001"><a:schemeClr val="lt1"/></p:bgRef></p:bg>
     <p:spTree>
       <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
       <p:grpSpPr/>
-    </p:spTree>
-  </p:cSld>
-  <p:clrMap accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4" accent5="accent5" accent6="accent6" bg1="lt1" bg2="lt2" folHlink="folHlink" hlink="hlink" tx1="dk1" tx2="dk2"/>
-  <p:hf sldNum="0" hdr="0" ftr="0" dt="1"/>
-  <p:notesStyle/>
-</p:notesMaster>`
-    },
-    {
-      name: "ppt/notesMasters/_rels/notesMaster1.xml.rels",
-      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="../theme/theme1.xml"/>
-</Relationships>`
-    },
-    {
-      name: "ppt/notesSlides/notesSlide1.xml",
-      data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:notes xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
-  <p:cSld name="Notes Slide">
-    <p:spTree>
-      <p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>
-      <p:grpSpPr/>
-      <p:sp>
-        <p:nvSpPr><p:cNvPr id="2" name="Notes Placeholder"/><p:cNvSpPr txBox="1"/><p:nvPr><p:ph type="body" idx="1"/></p:nvPr></p:nvSpPr>
-        <p:spPr><a:xfrm><a:off x="685800" y="914400"/><a:ext cx="5486400" cy="7315200"/></a:xfrm></p:spPr>
-        <p:txBody>
-          <a:bodyPr wrap="square"/>
-          <a:lstStyle/>
-          ${notesText.split("\n").map((line, idx) => `<a:p>${idx === 0 || idx === 3 ? `<a:r><a:rPr lang="en-AU" sz="1400" b="1"/><a:t>${xmlEscape(line)}</a:t></a:r>` : line ? `<a:r><a:rPr lang="en-AU" sz="1000"/><a:t>${xmlEscape(line)}</a:t></a:r>` : ""}</a:p>`).join("")}
-        </p:txBody>
-      </p:sp>
+      ${slide2Parts.join("")}
     </p:spTree>
   </p:cSld>
   <p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>
-</p:notes>`
+</p:sld>`
     },
     {
-      name: "ppt/notesSlides/_rels/notesSlide1.xml.rels",
+      name: "ppt/slides/_rels/slide2.xml.rels",
       data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesMaster" Target="../notesMasters/notesMaster1.xml"/>
-  <Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="../slides/slide1.xml"/>
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout1.xml"/>
 </Relationships>`
-    },
-    { name: "ppt/media/image1.png", data: imageBytes }
+    }
   ];
 
   return createStoredZip(entries);
