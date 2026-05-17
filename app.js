@@ -5813,7 +5813,7 @@ function renderFinal(assessment) {
             padding: 0.04cm 0.18cm;
             margin-right: 0.12cm;
           }
-          .pill-high { background: #fbe4e4; color: var(--doc-bad); }
+          .pill-high { background: #d32f2f; color: #ffffff; font-weight: 700; padding: 0.1cm 0.15cm; border-radius: 3px; display: inline-block; text-transform: uppercase; font-size: 8.5pt; letter-spacing: 0.05em; }
           .icon-chip {
             display: inline-block;
             font-weight: 700;
@@ -5888,13 +5888,11 @@ function renderFinal(assessment) {
             <p><strong>Assessment:</strong> ${escapeHtml(assessment.title)}</p>
             <p><strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
             <p><strong>Organisation:</strong> ${escapeHtml(orgDisplay)}</p>
-            <div class="cover-grid">
-              <div class="cover-card"><strong>Audience Mode</strong>${escapeHtml(audienceLabel)}</div>
-              <div class="cover-card"><strong>Generated</strong>${escapeHtml(generatedAt)}</div>
-            </div>
-            <div class="cover-meta">
-              <p><strong>Report purpose:</strong> Provide a clear view of current maturity, key risks, and a prioritized plan to improve ISO 42001 readiness.</p>
-              <p><strong>Prepared by:</strong> Align42 Assessment Assistant</p>
+            <div class="cover-meta" style="padding:0.2cm 0.3cm;">
+              <div style="font-size:9pt; line-height:1.3;">
+                <span style="color:#5b756d; text-transform:uppercase; font-weight:600;">Compliance-focused</span> • <span style="font-size:8.5pt;">Generated: ${escapeHtml(generatedAt)}</span>
+              </div>
+              <p style="margin:0.1cm 0 0; font-size:9.5pt;"><strong>Report purpose:</strong> Provide a clear view of current maturity, key risks, and a prioritized plan to improve ISO 42001 readiness.</p>
             </div>
           </div>
           <div class="body">
@@ -5916,9 +5914,9 @@ function renderFinal(assessment) {
             </div>
             <h2>Executive Summary</h2>
             <div class="note">
-              <p><span class="icon-chip">[Summary]</span><strong>What this means:</strong> ${escapeHtml(readinessText)}</p>
-              <p><span class="icon-chip">[Audience]</span><strong>Audience context:</strong> ${escapeHtml(executiveLead)}</p>
-              <p><span class="icon-chip">[Guide]</span><strong>How to use this report:</strong> ${escapeHtml(interpretationGuide)}</p>
+              <p><strong>What this means:</strong> ${escapeHtml(readinessText)}</p>
+              <p><strong>Audience context:</strong> ${escapeHtml(executiveLead)}</p>
+              <p><strong>How to use this report:</strong> ${escapeHtml(interpretationGuide)}</p>
             </div>
             <div class="kpi">
               <div class="card"><div class="label">Weighted score</div><div class="value">${score}%</div></div>
@@ -5930,12 +5928,12 @@ function renderFinal(assessment) {
             <h2>Visual Overview</h2>
             <div class="viz-grid">
               <div>
-                <p><span class="icon-chip">[Chart]</span><strong>Compliance profile</strong></p>
+                <p><strong>Compliance profile</strong></p>
                 <img src="${complianceChartDataUrl}" alt="Compliance profile chart" />
               </div>
               <div>
-                <p><span class="icon-chip">[Chart]</span><strong>Dimension maturity snapshot</strong></p>
-                <img src="${sectionBarsDataUrl}" alt="Section maturity bar chart" />
+                <p><strong>Dimension maturity snapshot</strong></p>
+                <img src="${sectionBarsDataUrl}" style="width:100%;" alt="Section maturity bar chart" />
               </div>
             </div>
             ${isAdvancedMode ? `<p class="small">Advanced mode includes a radar chart showing ISO 42001 dimension maturity versus the indicative readiness threshold.</p><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:12px;" alt="ISO 42001 maturity radar chart" />` : ""}
@@ -6008,15 +6006,15 @@ function renderFinal(assessment) {
               <div class="disclaimer-title">Disclaimer</div>
               <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
-            <p><span class="icon-chip">[Summary]</span><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
+            <p><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
             <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Control coverage</div><div style="font-size:24px; font-weight:700;">${coveragePercent}%</div></div>
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Avg maturity</div><div style="font-size:24px; font-weight:700;">${averageRating}/5</div></div>
             </div>
-            <img src="${complianceChartDataUrl}" style="width:42%; min-width:320px; border:1px solid #d5e4dc; border-radius:10px; float:right; margin:0 0 10px 16px;" alt="Compliance chart" />
-            <h2 style="margin:0 0 8px;">Top Risks Requiring Board Attention</h2>
+            <img src="${complianceChartDataUrl}" style="width:28%; min-width:200px; border:1px solid #d5e4dc; border-radius:10px; float:right; margin:0 0 10px 16px;" alt="Compliance chart" />
+            <h2 style="margin:0 0 8px;">Top Risks Requiring Management Attention</h2>
             ${criticalFindings.length ? `<ul style="margin-top:0;">${criticalFindings.slice(0, 4).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical contradictions detected from current data.</p>"}
             <h2 style="margin:14px 0 8px;">Immediate Decisions / Actions</h2>
             <table>
@@ -6039,7 +6037,7 @@ function renderFinal(assessment) {
               <div class="disclaimer-title">Disclaimer</div>
               <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
-            <p><span class="icon-chip">[Summary]</span><strong>Sample executive message:</strong> This sample demonstrates a low-maturity and high-ambition AI program that requires rapid uplift in governance, risk management, evidence quality, and operational assurance.</p>
+            <p><strong>Sample executive message:</strong> This sample demonstrates a low-maturity and high-ambition AI program that requires rapid uplift in governance, risk management, evidence quality, and operational assurance.</p>
             <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
