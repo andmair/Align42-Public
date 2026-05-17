@@ -1,0 +1,10 @@
+2026-05-17 03:46:59,931 [INFO] Align42 running at http://localhost:3000/Align42.html
+2026-05-17 03:46:59,931 [INFO] Health check available at http://localhost:3000/health
+2026-05-17 03:46:59,931 [INFO] Metrics available at http://localhost:3000/metrics
+2026-05-17 03:47:27,687 [INFO] Align42 running at http://localhost:8000/Align42.html
+2026-05-17 03:47:27,687 [INFO] Health check available at http://localhost:8000/health
+2026-05-17 03:47:27,687 [INFO] Metrics available at http://localhost:8000/metrics
+2026-05-17 03:47:30,578 [INFO] GET /health -> 200
+2026-05-17 03:47:32,702 [INFO] GET /health -> 200
+2026-05-17 03:47:34,837 [INFO] GET /metrics -> 200
+2026-05-17 03:47:40,022 [INFO] GET / -> 200
