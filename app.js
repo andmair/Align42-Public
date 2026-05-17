@@ -5160,12 +5160,6 @@ function buildRoadmapCanvas(assessment) {
   return canvas;
 }
 
-function demoSampleExportAssessment() {
-  const sample = createSimpleModeDemoAssessment();
-  sample.title = "ISO 42001 Demo Sample Assessment";
-  sample.updatedAt = nowIso();
-  return sample;
-}
 
 function roadmapRulerMarkers(timeline) {
   const mode = timeline.planningWeeks <= 14 ? "week" : "month";
@@ -6040,114 +6034,11 @@ function renderFinal(assessment) {
         </div>
   `);
 
-  const demoSampleExecutiveSummaryHtml = () => documentShell("Demo Sample Executive Summary", `
-        <div style="max-width:1040px; margin:0 auto; background:#fff; min-height:100vh;">
-          <div class="cover" style="min-height:unset;">
-            <h1 style="margin:0 0 8px;">Align42 Demo Sample Executive Summary</h1>
-            <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-          </div>
-          <div class="body" style="padding:22px 28px;">
-            <div class="disclaimer-box">
-              <div class="disclaimer-title">Disclaimer</div>
-              <p>${escapeHtml(reportDisclaimer)}</p>
-            </div>
-            <p><strong>Sample executive message:</strong> This sample demonstrates a low-maturity and high-ambition AI program that requires rapid uplift in governance, risk management, evidence quality, and operational assurance.</p>
-            <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
-              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
-              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
-              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Control coverage</div><div style="font-size:24px; font-weight:700;">${coveragePercent}%</div></div>
-              <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Avg maturity</div><div style="font-size:24px; font-weight:700;">${averageRating}/5</div></div>
-            </div>
-            <h2>Sample Board Priorities</h2>
-            <ul>
-              <li>Approve formal AI policy scope and role accountability.</li>
-              <li>Establish a repeatable AI risk assessment and risk register process.</li>
-              <li>Strengthen model validation, data quality, monitoring, and incident escalation evidence.</li>
-            </ul>
-            <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample executive summary generated for demonstration mode and should be tailored before real use.</em></p>
-          </div>
-        </div>
-  `);
 
-  const demoSampleReportHtml = () => documentShell("Demo Sample Report", `
-        <div style="max-width:1040px; margin:0 auto; background:#fff; min-height:100vh;">
-          <div class="cover" style="min-height:unset;">
-            <h1 style="margin:0 0 8px;">Align42 Demo Sample Report</h1>
-            <p style="margin:0;"><strong>Organisation:</strong> ${escapeHtml(assessment.data.context?.orgName || "Demo organisation")} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-          </div>
-          <div class="body" style="padding:22px 28px;">
-            <div class="disclaimer-box">
-              <div class="disclaimer-title">Disclaimer</div>
-              <p>${escapeHtml(reportDisclaimer)}</p>
-            </div>
-            <h2>Sample Executive Summary</h2>
-            <p>This sample report demonstrates a low-maturity/high-ambition scenario for a mid-sized Australian technology manufacturer. The current control baseline is early-stage, while strategic ambition requires rapid formalization of governance, risk, and operational assurance controls.</p>
-            <ul>
-              <li><strong>Current weighted readiness:</strong> ${score}%</li>
-              <li><strong>Control coverage:</strong> ${coveragePercent}%</li>
-              <li><strong>Average control rating:</strong> ${averageRating}/5</li>
-              <li><strong>Readiness profile:</strong> Low baseline with high uplift potential</li>
-            </ul>
-            <h2>Sample Priority Themes</h2>
-            <ol>
-              <li>Establish formal AI policy, scope, and role accountability model.</li>
-              <li>Implement repeatable AI risk assessment and risk register governance.</li>
-              <li>Strengthen model validation, data quality lineage, and incident response controls.</li>
-              <li>Embed monitoring, internal audit coverage, and management review cadence.</li>
-            </ol>
-            <h2>Sample Outcome Statement</h2>
-            <p>If executed as planned, the organisation can progress from ad hoc to defined-and-managed maturity with evidence suitable for ISO 42001 readiness activities and stakeholder assurance conversations.</p>
-            <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample deliverable generated for demonstration mode and should be tailored before real use.</em></p>
-          </div>
-        </div>
-  `);
 
-  const demoSampleRoadmapHtml = () => documentShell("Demo Sample Roadmap", `
-        <div style="max-width:1160px; margin:0 auto; background:#fff; min-height:100vh;">
-          <div class="cover" style="min-height:unset;">
-            <h1 style="margin:0 0 8px;">Align42 Demo Sample Roadmap</h1>
-            <p style="margin:0;"><strong>Horizon:</strong> ${escapeHtml(horizonSummary)} | <strong>Prepared for:</strong> ${escapeHtml(preparedFor)}</p>
-          </div>
-          <div class="body" style="padding:22px 30px;">
-            <div class="disclaimer-box">
-              <div class="disclaimer-title">Disclaimer</div>
-              <p>${escapeHtml(reportDisclaimer)}</p>
-            </div>
-            <p>This sample roadmap shows a phased path from foundational governance uplift to operating-control assurance for a low-maturity, high-ambition AI program.</p>
-            <table>
-              <tr>
-                <th>Phase</th>
-                <th>Window</th>
-                <th>Focus</th>
-                <th>Expected Evidence</th>
-              </tr>
-              <tr>
-                <td>Phase 1 - Foundation</td>
-                <td>Weeks 1-8</td>
-                <td>Scope, policy framework, governance forum, role accountability</td>
-                <td>Approved policy pack, scope register, governance charter, RACI</td>
-              </tr>
-              <tr>
-                <td>Phase 2 - Risk and Operations</td>
-                <td>Weeks 9-20</td>
-                <td>Risk method, risk register, model validation, data lineage, oversight controls</td>
-                <td>Risk records, validation templates, oversight logs, incident playbooks</td>
-              </tr>
-              <tr>
-                <td>Phase 3 - Assurance and Improvement</td>
-                <td>Weeks 21+</td>
-                <td>Monitoring, reporting, internal audit, corrective actions, continual improvement</td>
-                <td>KPI dashboards, management reviews, audit findings, CAPA evidence</td>
-              </tr>
-            </table>
-            <h2 style="margin-top:18px;">Sample Timeline Snapshot</h2>
-            <ul>
-              ${timelineRows.slice(0, 8).map((r) => `<li><strong>${escapeHtml(r.control)}</strong> (${escapeHtml(r.priority)}) - ${escapeHtml(r.startLabel)} to ${escapeHtml(r.endLabel)}</li>`).join("")}
-            </ul>
-            <p style="margin-top:20px; font-size:12px; color:#56766f;"><em>Demo note: This is a sample roadmap output for demonstration mode and should be adapted to live evidence and delivery constraints.</em></p>
-          </div>
-        </div>
-  `);
+
+
+
 
   root.innerHTML = `
     <div class="wizard-head"><div><div class="step-badge">Step ${assessment.data.currentSection + 1} of ${sections.length}</div><h2 class="section-title">Final Outputs</h2><p class="section-desc">Download the assessment report package. Roadmap planning and roadmap exports are on the next screen.</p></div></div>
@@ -6173,15 +6064,6 @@ function renderFinal(assessment) {
       <button class="btn secondary" id="downloadFullReportBtn">Full Report (.doc)</button>
       <button class="btn secondary" id="downloadControlsCsvBtn">Controls List (.csv)</button>
     </div>
-    ${isDemoMode ? `<div class="question question-focus">
-      <h3>Demo Sample Deliverables</h3>
-      <p class="hint">Use these sample files to preview the structure before tailoring a live assessment output.</p>
-      <div class="actions">
-        <button class="btn secondary" id="downloadDemoExecutiveSummaryBtn">Sample Executive Summary (.doc)</button>
-        <button class="btn secondary" id="downloadDemoReportBtn">Sample Full Report (.doc)</button>
-      </div>
-    </div>` : ""}
-
     ${renderNav(assessment)}
   `;
 
@@ -6202,12 +6084,6 @@ function renderFinal(assessment) {
 
   document.getElementById("downloadFullReportBtn").addEventListener("click", () => {
     download("align42-assessment-report.doc", "application/msword", reportHtml());
-  });
-  document.getElementById("downloadDemoExecutiveSummaryBtn")?.addEventListener("click", () => {
-    download("align42-demo-executive-summary.doc", "application/msword", demoSampleExecutiveSummaryHtml());
-  });
-  document.getElementById("downloadDemoReportBtn")?.addEventListener("click", () => {
-    download("align42-demo-sample-report.doc", "application/msword", demoSampleReportHtml());
   });
   bindNav(assessment);
 }
@@ -6288,14 +6164,6 @@ function renderRoadmap(assessment) {
       <button class="btn secondary" id="downloadRoadmapPngBtn">Download Roadmap PNG</button>
       <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPTX</button>
     </div>
-    ${isDemoMode ? `<div class="question question-focus">
-      <h3>Demo Sample Roadmap</h3>
-      <p class="hint">Use this sample file to preview roadmap presentation before tailoring a live output.</p>
-      <div class="actions">
-        <button class="btn secondary" id="downloadDemoRoadmapBtn">Sample Roadmap (.pptx)</button>
-      </div>
-    </div>` : ""}
-
     ${renderNav(assessment)}
   `;
 
@@ -6319,17 +6187,6 @@ function renderRoadmap(assessment) {
   document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
     const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
     download("align42-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
-  });
-  document.getElementById("downloadDemoRoadmapBtn")?.addEventListener("click", () => {
-    const sampleAssessment = demoSampleExportAssessment();
-    const sampleRows = roadmapRows(sampleAssessment);
-    const sampleFindings = detectAnalysisFindings(sampleAssessment);
-    const sampleTimeline = roadmapTimeline(sampleAssessment, sampleRows);
-    const sampleTimelineRows = sampleTimeline.items.slice(0, 16);
-    const sampleActionPlan = buildExecutiveActionPlan(sampleAssessment, sampleTimeline, sampleFindings, 9);
-    const sampleRoadmapDataUrl = buildRoadmapCanvas(sampleAssessment).toDataURL("image/png");
-    const pptx = roadmapPptxBytes(sampleAssessment, sampleRoadmapDataUrl, sampleTimelineRows, sampleActionPlan);
-    download("align42-demo-sample-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
   });
   bindNav(assessment);
 }
