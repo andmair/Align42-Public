@@ -5343,6 +5343,43 @@ function readinessNarrative(score) {
   return "Your organisation is in an early stage of ISO 42001 readiness and should prioritize foundational governance, risk, and operational controls.";
 }
 
+function businessContextNarrative(assessment) {
+  const context = assessment.data?.context || {};
+  const org = context.orgName || "The organisation";
+  const sector = context.industrySubSector || context.industrySector || context.industry || "its sector";
+  const geography = [context.stateProvince, context.country].filter(Boolean).join(", ") || "its operating geographies";
+  const use = context.currentUse || "AI-enabled initiatives";
+  const aspiration = context.aspiration || "a more mature and controlled AI operating model";
+  return `${org} is operating in ${sector}, with activity centered on ${geography}. The current assessment indicates that AI is already influencing business processes through ${use}. That means governance gaps are not theoretical: they can directly affect decision quality, customer confidence, regulatory exposure, supplier assurance, and the organisation's ability to scale toward ${aspiration}.`;
+}
+
+function consequenceNarrative(assessment, criticalFindings, score) {
+  const context = assessment.data?.context || {};
+  const riskDomains = context.riskDomains || "data quality, model oversight, third-party dependency, and accountability";
+  if (criticalFindings.length) {
+    return `The highest-priority findings show that weaknesses are concentrated in areas that can create real operational and compliance consequences. If they are left unresolved, the organisation is more likely to experience inconsistent control execution, weak evidence during assurance reviews, avoidable delays in customer or regulator scrutiny, and heightened exposure across ${riskDomains}.`;
+  }
+  if (score >= 80) {
+    return "The control baseline is comparatively strong, but remaining gaps still matter. The main risk is not immediate control failure; it is the accumulation of smaller evidence, ownership, and consistency weaknesses that can undermine confidence during audits, customer due diligence, or scaling of higher-impact AI use cases.";
+  }
+  return `The current maturity position indicates that business risk sits less in any single isolated control and more in the combined effect of fragmented governance, incomplete evidence, and inconsistent operating discipline. Without corrective action, that pattern can slow delivery, increase remediation cost later, and reduce the organisation's ability to demonstrate trustworthy AI practice when it matters most.`;
+}
+
+function actionUrgencyNarrative(actionPlan) {
+  const high = actionPlan.filter((a) => a.priority === "High").length;
+  if (high >= 4) {
+    return "The action plan should be treated as a near-term management priority. A large proportion of the recommended actions are time-sensitive and should be sequenced with visible executive sponsorship, because delay will compound assurance and delivery risk rather than simply defer effort.";
+  }
+  if (high >= 1) {
+    return "The action plan includes a focused set of higher-priority interventions that should be stabilized early. Addressing them first reduces the chance that downstream policy, monitoring, and assurance work is built on weak foundations.";
+  }
+  return "The action plan is primarily about disciplined maturation rather than emergency remediation. The value comes from sequencing improvements so that evidence quality, accountability, and repeatability rise together over time.";
+}
+
+function roadmapNarrative(timeline, approachLabel) {
+  return `The roadmap should be read as an implementation sequence, not just a timetable. The ${approachLabel.toLowerCase()} pathway reflects the need to establish foundational governance and evidence discipline before expecting later-stage monitoring, audit, and improvement controls to operate credibly. In practical terms, early slippage will usually have a cascading effect on later assurance milestones.`;
+}
+
 function sectionPerformanceRows(assessment) {
   const rows = sections
     .filter((s) => s.type === "controls")
@@ -5557,6 +5594,10 @@ function renderFinal(assessment) {
   const averageRating = total ? (rows.reduce((sum, r) => sum + Number(r.score || 0), 0) / total).toFixed(1) : "0.0";
   const readinessBand = readinessBandFromScore(score);
   const readinessText = readinessNarrative(score);
+  const businessStory = businessContextNarrative(assessment);
+  const consequenceStory = consequenceNarrative(assessment, criticalFindings, score);
+  const actionStory = actionUrgencyNarrative(actionPlan);
+  const roadmapStory = roadmapNarrative(timeline, approachLabel);
   const audienceLabel = "Compliance-focused";
   const executiveLead = "This report uses a compliance-focused tone aligned to ISO 42001 readiness, emphasizing control effectiveness, evidence sufficiency, and accountable remediation.";
   const interpretationGuide = "Use this report to verify control maturity, identify likely nonconformity risk, and track corrective actions to closure with objective evidence.";
@@ -5926,6 +5967,8 @@ function renderFinal(assessment) {
               <p><strong>Audience context:</strong> ${escapeHtml(executiveLead)}</p>
               <p><strong>How to use this report:</strong> ${escapeHtml(interpretationGuide)}</p>
             </div>
+            <p>${escapeHtml(businessStory)}</p>
+            <p>${escapeHtml(consequenceStory)}</p>
             <div class="kpi">
               <div class="card"><div class="label">Weighted score</div><div class="value">${score}%</div></div>
               <div class="card"><div class="label">Control coverage</div><div class="value">${coveragePercent}%</div></div>
@@ -5947,6 +5990,7 @@ function renderFinal(assessment) {
             ${isAdvancedMode ? `<p class="small">Advanced mode includes a radar chart showing ISO 42001 dimension maturity versus the indicative readiness threshold.</p><img src="${radarDataUrl}" style="width:100%; border:1px solid #d5e4dc; border-radius:12px;" alt="ISO 42001 maturity radar chart" />` : ""}
 
             <h2>Key Findings and Business Impact</h2>
+            <p>${escapeHtml(consequenceStory)}</p>
             ${criticalFindings.length ? `
               <ul>
                 ${criticalFindings.map((f) => `<li><span class="pill pill-high">High</span><strong>${escapeHtml(f.type)}</strong>${f.controlId ? ` (${escapeHtml(getControl(f.controlId)?.control || f.controlId)})` : ""}: ${escapeHtml(f.message)}</li>`).join("")}
@@ -5957,6 +6001,7 @@ function renderFinal(assessment) {
 
             <h2>Priority Action Plan</h2>
             <p>This plan is designed for non-technical leadership visibility and delivery accountability. Actions are grouped by urgency window and include expected evidence.</p>
+            <p>${escapeHtml(actionStory)}</p>
             <table>
               <tr><th>#</th><th>Action</th><th>Priority</th><th>Owner</th><th>Target Window</th><th>Business Impact if Delayed</th><th>Expected Evidence of Completion</th></tr>
               ${actionRowsForAudience.map((a) => `<tr>
@@ -5971,6 +6016,7 @@ function renderFinal(assessment) {
             </table>
 
             <h2>Roadmap Timeline</h2>
+            <p>${escapeHtml(roadmapStory)}</p>
             <div class="kpi" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
               <div class="card"><div class="label">Approach</div><div class="value" style="font-size:16px;">${escapeHtml(approachLabel)}</div></div>
               <div class="card"><div class="label">Scenario</div><div class="value" style="font-size:16px;">${escapeHtml(timeline.scenarioLabel)}</div></div>
@@ -6015,6 +6061,8 @@ function renderFinal(assessment) {
               <p>${escapeHtml(reportDisclaimer)}</p>
             </div>
             <p><strong>Executive message:</strong> ${escapeHtml(readinessText)}</p>
+            <p>${escapeHtml(businessStory)}</p>
+            <p>${escapeHtml(consequenceStory)}</p>
             <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin:10px 0 14px;">
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Weighted score</div><div style="font-size:24px; font-weight:700;">${score}%</div></div>
               <div style="border:1px solid #d7e5de; border-radius:10px; padding:10px; background:#f7fcf9;"><div style="font-size:11px; color:#5b756d; text-transform:uppercase;">Readiness band</div><div style="font-size:20px; font-weight:700;">${escapeHtml(readinessBand)}</div></div>
@@ -6023,6 +6071,7 @@ function renderFinal(assessment) {
             </div>
             <img src="${complianceChartDataUrl}" style="width:28%; min-width:200px; border:1px solid #d5e4dc; border-radius:10px; float:right; margin:0 0 10px 16px;" alt="Compliance chart" />
             <h2 style="margin:0 0 8px;">Top Risks Requiring Management Attention</h2>
+            <p>${escapeHtml(actionStory)}</p>
             ${criticalFindings.length ? `<ul style="margin-top:0;">${criticalFindings.slice(0, 4).map((f) => `<li><strong>${escapeHtml(f.type)}:</strong> ${escapeHtml(f.message)}</li>`).join("")}</ul>` : "<p>No critical contradictions detected from current data.</p>"}
             <h2 style="margin:14px 0 8px;">Immediate Decisions / Actions</h2>
             <table>
