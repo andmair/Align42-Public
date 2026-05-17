@@ -67,3 +67,13 @@
 2026-05-17 04:10:45,699 [INFO] Metrics available at http://localhost:8000/metrics
 2026-05-17 04:10:48,584 [INFO] GET /health -> 200
 2026-05-17 04:10:50,702 [INFO] GET /health -> 200
+2026-05-17 04:11:20,891 [INFO] GET /health -> 200
+2026-05-17 04:11:51,056 [INFO] GET /health -> 200
+2026-05-17 04:12:21,230 [INFO] GET /health -> 200
+2026-05-17 04:12:51,401 [INFO] GET /health -> 200
+2026-05-17 04:13:21,573 [INFO] GET /health -> 200
+2026-05-17 04:13:25,207 [INFO] Align42 running at http://localhost:8000/Align42.html
+2026-05-17 04:13:25,207 [INFO] Health check available at http://localhost:8000/health
+2026-05-17 04:13:25,207 [INFO] Metrics available at http://localhost:8000/metrics
+2026-05-17 04:13:28,102 [INFO] GET /health -> 200
+2026-05-17 04:13:30,215 [INFO] GET /health -> 200

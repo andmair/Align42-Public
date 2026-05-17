@@ -4604,14 +4604,26 @@ function roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan) 
   const timeline = roadmapTimeline(assessment, roadmapRows(assessment));
   const generatedAt = new Date().toISOString();
   const imageBytes = dataUrlToBytes(roadmapDataUrl);
-  const summaryLines = actionPlan.slice(0, 6).map((a, i) => `${i + 1}. ${a.control} - ${a.window} (${a.owner})`).join("\n");
-  const detailLines = timelineRows.slice(0, 6).map((r) => `${r.control}: ${r.startLabel} to ${r.endLabel}`).join("\n");
+  const summaryLines = actionPlan.slice(0, 6).map((a, i) => `${i + 1}. ${a.control} - ${a.window} (Owner: ${a.owner})`).join("\n");
+  const detailLines = timelineRows.slice(0, 6).map((r) => `• ${r.control}\n  From: ${r.startLabel}\n  To: ${r.endLabel}\n`).join("\n");
   const notesText = [
-    "Priority Action Summary",
+    "EDITABLE ROADMAP DATA",
+    "",
+    "Organisation: " + orgDisplay,
+    "Prepared for: " + preparedFor,
+    "Approach: " + approachLabel,
+    "Scenario: " + timeline.scenarioLabel,
+    "",
+    "PRIORITY ACTIONS (Editable - Copy to table or shapes)",
     summaryLines || "No priority action summary available.",
     "",
-    "Roadmap Timing Notes",
-    detailLines || "No additional timeline notes available."
+    "ROADMAP TIMELINE (Editable - Copy to table or timeline)",
+    detailLines || "No additional timeline notes available.",
+    "",
+    "INSTRUCTIONS FOR EDITING:",
+    "1. Right-click on the roadmap image to replace it with your editable version",
+    "2. Or, select the data above and create a new table or timeline shapes",
+    "3. All dates and control names are listed in the notes for easy reference"
   ].join("\n");
 
   const entries = [
