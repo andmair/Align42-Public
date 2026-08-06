@@ -264,6 +264,7 @@ let state = {
   view: "assessment",
   ui: { uploadOpen: {}, summaryOpen: {}, profileEditorOpen: false, loggedOut: false }
 };
+const ALIGN42_BUILD_VERSION = "2026.08.06-v1";
 let storageReady = false;
 let storageCryptoAvailable = false;
 let storageSecurityBlocked = false;
@@ -610,10 +611,25 @@ async function bootstrapSecureState() {
   }
   const profile = await readSecureStorage(STORAGE.profile, null);
   const settings = await readSecureStorage(STORAGE.settings, DEFAULT_SETTINGS);
-  const assessments = await readSecureStorage(STORAGE.assessments, []);
+  let assessments = await readSecureStorage(STORAGE.assessments, []);
+
+  const lastSeededVersion = localStorage.getItem("align42_seeded_version");
+  const needsRefresh = lastSeededVersion !== ALIGN42_BUILD_VERSION;
+  assessments = Array.isArray(assessments) ? assessments : [];
+
+  if (assessments.length === 0 || needsRefresh) {
+    const demoAssessment = createSimpleModeDemoAssessment();
+    assessments = [demoAssessment, ...assessments.filter((a) => !isDemoAssessment(a))];
+    await persistSecureStorage(STORAGE.assessments, assessments);
+    localStorage.setItem("align42_seeded_version", ALIGN42_BUILD_VERSION);
+  }
+
   state.profile = profile ? normalizedProfile(profile) : null;
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
-  state.assessments = Array.isArray(assessments) ? assessments : [];
+  state.assessments = assessments;
+  if (!state.currentAssessmentId && state.assessments.length > 0) {
+    state.currentAssessmentId = state.assessments[0].id;
+  }
   ensureSettingsDefaults();
   storageReady = true;
   render();
