@@ -5757,6 +5757,8 @@ function renderFinal(assessment) {
   const averageRating = total ? (rows.reduce((sum, r) => sum + Number(r.score || 0), 0) / total).toFixed(1) : "0.0";
   const readinessBand = readinessBandFromScore(score);
   const readinessText = readinessNarrative(score);
+  const actionPlan = buildExecutiveActionPlan(assessment, timeline, findings, 9);
+  const actionRowsForAudience = actionPlan;
   const businessStory = businessContextNarrative(assessment);
   const consequenceStory = consequenceNarrative(assessment, criticalFindings, score);
   const actionStory = actionUrgencyNarrative(actionPlan);
@@ -5768,8 +5770,6 @@ function renderFinal(assessment) {
   const isDemoMode = isDemoAssessment(assessment);
   const isAdvancedMode = assessmentMode() === "advanced";
   const sectionRows = sectionPerformanceRows(assessment);
-  const actionPlan = buildExecutiveActionPlan(assessment, timeline, findings, 9);
-  const actionRowsForAudience = actionPlan;
   const timelineById = Object.fromEntries(timeline.items.map((x) => [x.id, x]));
   const generatedAt = new Date().toLocaleString();
   const generatedDate = new Date().toLocaleDateString();
