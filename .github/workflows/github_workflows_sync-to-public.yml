@@ -1,0 +1,56 @@
+name: Sync to public repository
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * *' # optional: nightly run at 02:00 UTC (adjust or remove)
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: sync-to-public
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false  # important: we will use the PAT, not GITHUB_TOKEN
+
+      - name: Ensure Git user
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add public remote
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+        run: |
+          if [ -z "$PUBLIC_REPO_PAT" ]; then
+            echo "PUBLIC_REPO_PAT is not set. Aborting."
+            exit 1
+          fi
+          # Use a token in the URL (token is masked by Actions)
+          PUBLIC_URL="https://x-access-token:${PUBLIC_REPO_PAT}@github.com/andmair/Align42-Public.git"
+          git remote remove public 2>/dev/null || true
+          git remote add public "$PUBLIC_URL"
+
+      - name: Push branches (non-destructive)
+        run: |
+          # Push all branches and prune remote branches that were deleted locally
+          git push --prune public refs/heads/*:refs/heads/*
+
+      - name: Push tags
+        run: |
+          git push --tags public
+
+      # Optional destructive mirror (uncomment if you intend to fully mirror, including deletions)
+      # - name: Mirror push (DANGEROUS)
+      #   if: github.event_name == 'workflow_dispatch' # limit when it can be run
+      #   run: git push --mirror public
