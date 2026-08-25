@@ -1,13 +1,7 @@
 name: Sync to public repository
 
 on:
-  push:
-    branches:
-      - main
-      - master
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *' # optional: nightly run at 02:00 UTC (adjust or remove)
 
 jobs:
   sync:
