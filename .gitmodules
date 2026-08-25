@@ -1,0 +1,3 @@
+[submodule "Align42-clone"]
+	path = Align42-clone
+	url = https://github.com/andmair/Align42-clone.git
