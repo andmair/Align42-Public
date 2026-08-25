@@ -6,10 +6,6 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    env:
-      # Temporary: allow actions that still target Node 20 to run until they are upgraded.
-      # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
     concurrency:
       group: sync-to-public
       cancel-in-progress: true
