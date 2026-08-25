@@ -6,6 +6,10 @@ on:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      # Temporary: allow actions that still target Node 20 to run until they are upgraded.
+      # See: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: 'true'
     concurrency:
       group: sync-to-public
       cancel-in-progress: true
@@ -34,6 +38,18 @@ jobs:
           PUBLIC_URL="https://x-access-token:${PUBLIC_REPO_PAT}@github.com/andmair/Align42-Public.git"
           git remote remove public 2>/dev/null || true
           git remote add public "$PUBLIC_URL"
+
+      - name: Verify PUBLIC_REPO_PAT has access to the target repo
+        env:
+          PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
+        run: |
+          # Echoing helpful guidance if the token cannot access the target repo
+          status=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: token $PUBLIC_REPO_PAT" https://api.github.com/repos/andmair/Align42-Public)
+          if [ "$status" -ne 200 ]; then
+            echo "PUBLIC_REPO_PAT cannot access https://github.com/andmair/Align42-Public (HTTP $status)."
+            echo "Ensure the PAT has the required scopes (repo) and access to the target repository, or use a deploy key/GitHub App with push permission."
+            exit 1
+          fi
 
       - name: Push branches (non-destructive)
         run: |
