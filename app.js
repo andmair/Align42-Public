@@ -2716,17 +2716,32 @@ function renderWelcome() {
               ${mode === "advanced" ? `
               <div style="margin-top:0.7rem; border-top:1px dashed var(--line); padding-top:0.7rem;">
                 <h3 style="margin:0 0 0.35rem;">AI Mode (Advanced only)</h3>
-                <p class="hint">Advanced mode lets you connect an AI service to provide deeper analysis, interpretation support, and stronger recommendation detail.</p>
-                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem; font-weight:600; cursor:pointer;">
                   <input id="aiModeToggle" type="checkbox" ${aiMode ? "checked" : ""} />
-                  <span>${aiMode ? "AI mode enabled" : "AI mode disabled"}</span>
+                  <span>Enable AI mode</span>
                 </label>
-                ${aiDisabledReason() ? `<p class="hint"><strong>AI unavailable:</strong> ${escapeHtml(aiDisabledReason())}</p>` : `<p class="hint"><strong>AI status:</strong> Ready (${escapeHtml(providerLabel())}).</p>`}
+                <p class="hint" style="margin-top:0.4rem;">
+                  <strong>AI Capabilities:</strong> Enabling AI mode unlocks intelligent clause gap synthesis, automated evidence quality grading, custom remediation guidance, delegation mapping assistance, and tailored ISO 42001 governance recommendations.
+                </p>
+                ${aiMode ? (aiDisabledReason() ? `<p class="hint" style="margin-top:0.3rem;"><strong>AI unavailable:</strong> ${escapeHtml(aiDisabledReason())}</p>` : `<p class="hint" style="margin-top:0.3rem;"><strong>AI status:</strong> Ready (${escapeHtml(providerLabel())}).</p>`) : ""}
               </div>
+              ` : ""}
 
-              <details class="question" id="aiSettingsAccordion" style="margin-top:0.7rem;" ${showAiSettings ? "open" : ""}>
-                <summary style="cursor:pointer; font-weight:700; font-size:0.95rem; user-select:none;">⚙ AI Settings</summary>
-                <div id="aiSettingsPanel" style="margin-top:0.6rem;">
+              ${mode === "advanced" && aiMode ? `
+              <div class="question" id="aiSettingsPanel" style="margin-top:0.7rem; background:var(--bg-card); border:1px solid var(--line); padding:0.75rem; border-radius:8px;">
+                <h3 style="margin:0 0 0.35rem;">⚙ AI Settings</h3>
+                
+                <div class="question" style="margin-bottom:0.75rem; background:var(--bg-subtle, #f8f9fa); padding:0.6rem; border-radius:6px; border:1px solid var(--line);">
+                  <p class="hint" style="margin:0;"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align42, you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
+                  <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; font-weight:600; cursor:pointer;">
+                    <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
+                    <span>I understand and accept the AI disclaimer</span>
+                  </label>
+                </div>
+
+                ${!state.settings.aiDisclaimerAcknowledged ? `<p class="hint" style="color:var(--warn, #c92a2a); margin-bottom:0.5rem; font-weight:600;">⚠️ Select the AI disclaimer checkbox above to unlock and update AI settings.</p>` : ""}
+
+                <fieldset ${!state.settings.aiDisclaimerAcknowledged ? "disabled" : ""} style="border:none; padding:0; margin:0;">
                   <label style="margin-top:0.4rem;">Credential Storage
                     <select id="aiCredentialStorageSelect">
                       <option value="session" ${state.settings.aiCredentialStorage === "persistent" ? "" : "selected"}>Session only (recommended)</option>
@@ -2778,13 +2793,6 @@ function renderWelcome() {
                   </div>
                   ${preflight.errors.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight errors</strong><ul class="evidence-list">${preflight.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
                   ${preflight.warnings.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight warnings</strong><ul class="evidence-list">${preflight.warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-                  <div class="question" style="margin-top:0.7rem;">
-                    <p class="hint"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align 42 you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
-                    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.45rem;">
-                      <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
-                      <span>I understand</span>
-                    </label>
-                  </div>
                   <details class="question" style="margin-top:0.5rem;">
                     <summary style="cursor:pointer;"><strong>API Diagnostics</strong></summary>
                     <p class="hint">Recent connection and request diagnostics (redacted).</p>
@@ -2795,8 +2803,8 @@ function renderWelcome() {
                     ${diagnostics.length ? `<ul class="evidence-list">${diagnostics.map((d) => `<li><strong>${escapeHtml(new Date(d.at).toLocaleString())}</strong> [${escapeHtml(d.status)}] ${escapeHtml(d.provider)} / ${escapeHtml(d.stage)}${d.action ? ` / ${escapeHtml(d.action)}` : ""}: ${escapeHtml(d.message)}<details><summary>Details</summary><pre class="diag-pre">${escapeHtml(JSON.stringify(d.details || {}, null, 2))}</pre></details></li>`).join("")}</ul>` : "<p class=\"hint\">No diagnostics yet.</p>"}
                   </details>
                   <p class="hint" style="margin-top:0.5rem;">Choose session-only storage for stronger local key hygiene.</p>
-                </div>
-              </details>
+                </fieldset>
+              </div>
               ` : ""}
             </div>
           </div>
@@ -2932,9 +2940,11 @@ function renderWelcome() {
   });
 
   document.getElementById("aiModeToggle")?.addEventListener("change", (e) => {
-    state.settings.aiDisclaimerAcknowledged = false;
     state.settings.aiMode = e.target.checked;
     state.settings.settingsOpen = e.target.checked;
+    if (!e.target.checked) {
+      state.settings.aiDisclaimerAcknowledged = false;
+    }
     saveSettings();
     render();
   });
@@ -2951,32 +2961,19 @@ function renderWelcome() {
     render();
   });
 
-  document.getElementById("aiSettingsAccordion")?.addEventListener("toggle", (e) => {
-    state.settings.settingsOpen = e.target.open;
-    saveSettings();
-  });
-  document.getElementById("aiSettingsToggleBtn")?.addEventListener("click", () => {
-    state.settings.settingsOpen = !state.settings.settingsOpen;
+  document.getElementById("aiDisclaimerCheck")?.addEventListener("change", (e) => {
+    state.settings.aiDisclaimerAcknowledged = e.target.checked;
     saveSettings();
     render();
   });
-  const clearAiDisclaimerAck = (refresh = false) => {
-    state.settings.aiDisclaimerAcknowledged = false;
-    const check = document.getElementById("aiDisclaimerCheck");
-    if (check) check.checked = false;
-    saveSettings();
-    if (refresh) render();
-  };
   document.getElementById("aiProviderSelect")?.addEventListener("change", (e) => {
     state.settings.aiProvider = e.target.value;
-    clearAiDisclaimerAck(true);
+    saveSettings();
+    render();
   });
   document.getElementById("aiCredentialStorageSelect")?.addEventListener("change", (e) => {
     state.settings.aiCredentialStorage = e.target.value === "persistent" ? "persistent" : "session";
-    clearAiDisclaimerAck(false);
-  });
-  ["openaiKeyInput", "anthropicKeyInput", "geminiKeyInput", "azureApiKeyInput", "azureEndpointInput", "azureDeploymentInput", "azureApiVersionInput"].forEach((id) => {
-    document.getElementById(id)?.addEventListener("input", () => clearAiDisclaimerAck(false));
+    saveSettings();
   });
 
   document.getElementById("testAiSettingsBtn")?.addEventListener("click", async () => {
