@@ -368,6 +368,13 @@ textarea {
   gap: 0.7rem;
 }
 
+.setup-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
 .assessment-list {
   display: grid;
   gap: 0.65rem;

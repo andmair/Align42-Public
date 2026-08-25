@@ -2696,144 +2696,160 @@ function renderWelcome() {
           <div class="metric-card"><div class="metric-label">Completed</div><div class="metric-value">${completedCount}</div></div>
         </div>
         <div class="setup-grid">
-        ${state.ui.loggedOut ? `
-          <div class="question question-focus">
-            <h3>Logged Out</h3>
-            <p class="hint">Your details and saved assessments have been cleared from the current UI and in-memory cache. Local saved data is still retained on this device in the background.</p>
-          </div>
-        ` : ""}
-        <div class="question">
-          <h3>Assessment Mode</h3>
-          <p class="hint"><strong>Select your assessment mode before you start.</strong> Simple mode is optimized for generalists, while Advanced mode supports deeper specialist scoring and richer analysis.</p>
-          <label style="display:flex; align-items:center; gap:0.5rem;">
-            <select id="assessmentModeSelect">
-              <option value="simple" ${mode === "simple" ? "selected" : ""}>Simple (generalist)</option>
-              <option value="advanced" ${mode === "advanced" ? "selected" : ""}>Advanced (specialist)</option>
-            </select>
-          </label>
-          <p class="hint">${mode === "advanced" ? "Advanced mode: 0.5-step scoring, richer evidence quality breakdown, and nuanced AI recommendations." : "Simple mode: quick 1-5 scoring with concise guidance."}</p>
-          ${mode === "advanced" ? `
-          <div style="margin-top:0.7rem; border-top:1px dashed var(--line); padding-top:0.7rem;">
-          <h3 style="margin:0 0 0.35rem;">AI Mode (Advanced only)</h3>
-          <p class="hint">Advanced mode lets you connect an AI service to provide deeper analysis, interpretation support, and stronger recommendation detail.</p>
-          <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
-            <input id="aiModeToggle" type="checkbox" ${aiMode ? "checked" : ""} />
-            <span>${aiMode ? "AI mode enabled" : "AI mode disabled"}</span>
-            ${aiMode ? `<button class="btn ghost small icon-btn" id="aiSettingsToggleBtn" title="Open AI settings" type="button">⚙</button>` : ""}
-          </label>
-          ${aiDisabledReason() ? `<p class="hint"><strong>AI unavailable:</strong> ${escapeHtml(aiDisabledReason())}</p>` : `<p class="hint"><strong>AI status:</strong> Ready (${escapeHtml(providerLabel())}).</p>`}
-          </div>
-          ` : ""}
+          <div class="setup-col">
+            ${state.ui.loggedOut ? `
+              <div class="question question-focus">
+                <h3>Logged Out</h3>
+                <p class="hint">Your details and saved assessments have been cleared from the current UI and in-memory cache. Local saved data is still retained on this device in the background.</p>
+              </div>
+            ` : ""}
+            <div class="question">
+              <h3>Assessment Mode</h3>
+              <p class="hint"><strong>Select your assessment mode before you start.</strong> Simple mode is optimized for generalists, while Advanced mode supports deeper specialist scoring and richer analysis.</p>
+              <label style="display:flex; align-items:center; gap:0.5rem;">
+                <select id="assessmentModeSelect">
+                  <option value="simple" ${mode === "simple" ? "selected" : ""}>Simple (generalist)</option>
+                  <option value="advanced" ${mode === "advanced" ? "selected" : ""}>Advanced (specialist)</option>
+                </select>
+              </label>
+              <p class="hint">${mode === "advanced" ? "Advanced mode: 0.5-step scoring, richer evidence quality breakdown, and nuanced AI recommendations." : "Simple mode: quick 1-5 scoring with concise guidance."}</p>
+              ${mode === "advanced" ? `
+              <div style="margin-top:0.7rem; border-top:1px dashed var(--line); padding-top:0.7rem;">
+                <h3 style="margin:0 0 0.35rem;">AI Mode (Advanced only)</h3>
+                <p class="hint">Advanced mode lets you connect an AI service to provide deeper analysis, interpretation support, and stronger recommendation detail.</p>
+                <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem;">
+                  <input id="aiModeToggle" type="checkbox" ${aiMode ? "checked" : ""} />
+                  <span>${aiMode ? "AI mode enabled" : "AI mode disabled"}</span>
+                </label>
+                ${aiDisabledReason() ? `<p class="hint"><strong>AI unavailable:</strong> ${escapeHtml(aiDisabledReason())}</p>` : `<p class="hint"><strong>AI status:</strong> Ready (${escapeHtml(providerLabel())}).</p>`}
+              </div>
 
-          <div id="aiSettingsPanel" style="display:${mode === "advanced" && showAiSettings ? "block" : "none"}; margin-top:0.8rem; border-top:1px dashed var(--line); padding-top:0.8rem;">
-            <h3>AI Settings</h3>
-            <label>Credential Storage
-              <select id="aiCredentialStorageSelect">
-                <option value="session" ${state.settings.aiCredentialStorage === "persistent" ? "" : "selected"}>Session only (recommended)</option>
-                <option value="persistent" ${state.settings.aiCredentialStorage === "persistent" ? "selected" : ""}>Persist on this device</option>
-              </select>
-            </label>
-            <p class="hint">${state.settings.aiCredentialStorage === "persistent" ? "Provider credentials are persisted in local browser storage on this device." : "Provider credentials are kept in-memory for this session and are not persisted to local storage."}</p>
-            <label>AI Provider
-              <select id="aiProviderSelect">
-                <option value="openai" ${provider === "openai" ? "selected" : ""}>OpenAI</option>
-                <option value="anthropic" ${provider === "anthropic" ? "selected" : ""}>Anthropic Claude</option>
-                <option value="gemini" ${provider === "gemini" ? "selected" : ""}>Google Gemini</option>
-                <option value="azure_openai" ${provider === "azure_openai" ? "selected" : ""}>Azure OpenAI</option>
-              </select>
-            </label>
-            ${provider === "openai" ? `
-              <label>OpenAI API Key
-                <input id="openaiKeyInput" type="password" placeholder="sk-..." value="${escapeHtml(state.settings.openaiKey || "")}" />
-              </label>
-            ` : ""}
-            ${provider === "anthropic" ? `
-              <label>Anthropic API Key
-                <input id="anthropicKeyInput" type="password" placeholder="sk-ant-..." value="${escapeHtml(state.settings.anthropicKey || "")}" />
-              </label>
-            ` : ""}
-            ${provider === "gemini" ? `
-              <label>Gemini API Key
-                <input id="geminiKeyInput" type="password" placeholder="AIza..." value="${escapeHtml(state.settings.geminiKey || "")}" />
-              </label>
-            ` : ""}
-            ${provider === "azure_openai" ? `
-              <label>Azure OpenAI API Key
-                <input id="azureApiKeyInput" type="password" placeholder="Azure API key" value="${escapeHtml(state.settings.azureApiKey || "")}" />
-              </label>
-              <label>Azure Endpoint
-                <input id="azureEndpointInput" type="text" placeholder="https://your-resource.openai.azure.com" value="${escapeHtml(state.settings.azureEndpoint || "")}" />
-              </label>
-              <label>Azure Deployment Name
-                <input id="azureDeploymentInput" type="text" placeholder="gpt-4o-mini" value="${escapeHtml(state.settings.azureDeployment || "")}" />
-              </label>
-              <label>Azure API Version
-                <input id="azureApiVersionInput" type="text" placeholder="2024-10-21" value="${escapeHtml(state.settings.azureApiVersion || "2024-10-21")}" />
-              </label>
-            ` : ""}
-            <div class="actions">
-              <button class="btn secondary" id="testAiSettingsBtn">Test API Connection</button>
-              <button class="btn secondary" id="saveAiSettingsBtn">Save AI Settings</button>
-              <a class="btn ghost" href="${setupLink}" target="_blank" rel="noopener noreferrer">Provider API Setup Instructions</a>
-            </div>
-            ${preflight.errors.length ? `<div class="evidence"><strong>Provider preflight errors</strong><ul class="evidence-list">${preflight.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-            ${preflight.warnings.length ? `<div class="evidence"><strong>Provider preflight warnings</strong><ul class="evidence-list">${preflight.warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-            <div class="question" style="margin-top:0.7rem;">
-              <p class="hint"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align 42 you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
-              <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.45rem;">
-                <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
-                <span>I understand</span>
-              </label>
-            </div>
-            <details class="question">
-              <summary><strong>API Diagnostics</strong></summary>
-              <p class="hint">Recent connection and request diagnostics (redacted).</p>
-              <div class="actions">
-                <button class="btn ghost small" type="button" id="clearAiDiagnosticsBtn">Clear Diagnostics</button>
-                <button class="btn ghost small" type="button" id="exportAiDiagnosticsBtn">Export Diagnostics JSON</button>
-              </div>
-              ${diagnostics.length ? `<ul class="evidence-list">${diagnostics.map((d) => `<li><strong>${escapeHtml(new Date(d.at).toLocaleString())}</strong> [${escapeHtml(d.status)}] ${escapeHtml(d.provider)} / ${escapeHtml(d.stage)}${d.action ? ` / ${escapeHtml(d.action)}` : ""}: ${escapeHtml(d.message)}<details><summary>Details</summary><pre class="diag-pre">${escapeHtml(JSON.stringify(d.details || {}, null, 2))}</pre></details></li>`).join("")}</ul>` : "<p class=\"hint\">No diagnostics yet.</p>"}
-            </details>
-            <p class="hint">Choose session-only storage for stronger local key hygiene.</p>
-          </div>
-        </div>
-        ${showProfileEditor ? `
-          <div class="question">
-            <h3>${hasProfile ? "Edit Profile" : "Set Up Your Profile"}</h3>
-            <p class="hint">Enter your details to start or open assessments. All profile fields are shown here together.</p>
-            <div class="row">
-              <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" value="${escapeHtml(state.profile?.name || "")}" /></label>
-              <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" value="${escapeHtml(state.profile?.email || "")}" /></label>
-            </div>
-            <label style="margin-top:0.6rem;">Role<input id="profileRole" type="text" placeholder="Example: Risk Manager" value="${escapeHtml(state.profile?.role || "")}" /></label>
-            <div class="actions" style="margin-top:0.7rem;">
-              <button class="btn primary" id="saveProfileBtn">Save Profile</button>
-              ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close Profile</button>` : ""}
-              ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
-              ${hasProfile ? `<button class="btn ghost" id="deleteProfileBtn">Delete Profile</button>` : ""}
+              <details class="question" id="aiSettingsAccordion" style="margin-top:0.7rem;" ${showAiSettings ? "open" : ""}>
+                <summary style="cursor:pointer; font-weight:700; font-size:0.95rem; user-select:none;">⚙ AI Settings</summary>
+                <div id="aiSettingsPanel" style="margin-top:0.6rem;">
+                  <label style="margin-top:0.4rem;">Credential Storage
+                    <select id="aiCredentialStorageSelect">
+                      <option value="session" ${state.settings.aiCredentialStorage === "persistent" ? "" : "selected"}>Session only (recommended)</option>
+                      <option value="persistent" ${state.settings.aiCredentialStorage === "persistent" ? "selected" : ""}>Persist on this device</option>
+                    </select>
+                  </label>
+                  <p class="hint">${state.settings.aiCredentialStorage === "persistent" ? "Provider credentials are persisted in local browser storage on this device." : "Provider credentials are kept in-memory for this session and are not persisted to local storage."}</p>
+                  <label>AI Provider
+                    <select id="aiProviderSelect">
+                      <option value="openai" ${provider === "openai" ? "selected" : ""}>OpenAI</option>
+                      <option value="anthropic" ${provider === "anthropic" ? "selected" : ""}>Anthropic Claude</option>
+                      <option value="gemini" ${provider === "gemini" ? "selected" : ""}>Google Gemini</option>
+                      <option value="azure_openai" ${provider === "azure_openai" ? "selected" : ""}>Azure OpenAI</option>
+                    </select>
+                  </label>
+                  ${provider === "openai" ? `
+                    <label>OpenAI API Key
+                      <input id="openaiKeyInput" type="password" placeholder="sk-..." value="${escapeHtml(state.settings.openaiKey || "")}" />
+                    </label>
+                  ` : ""}
+                  ${provider === "anthropic" ? `
+                    <label>Anthropic API Key
+                      <input id="anthropicKeyInput" type="password" placeholder="sk-ant-..." value="${escapeHtml(state.settings.anthropicKey || "")}" />
+                    </label>
+                  ` : ""}
+                  ${provider === "gemini" ? `
+                    <label>Gemini API Key
+                      <input id="geminiKeyInput" type="password" placeholder="AIza..." value="${escapeHtml(state.settings.geminiKey || "")}" />
+                    </label>
+                  ` : ""}
+                  ${provider === "azure_openai" ? `
+                    <label>Azure OpenAI API Key
+                      <input id="azureApiKeyInput" type="password" placeholder="Azure API key" value="${escapeHtml(state.settings.azureApiKey || "")}" />
+                    </label>
+                    <label>Azure Endpoint
+                      <input id="azureEndpointInput" type="text" placeholder="https://your-resource.openai.azure.com" value="${escapeHtml(state.settings.azureEndpoint || "")}" />
+                    </label>
+                    <label>Azure Deployment Name
+                      <input id="azureDeploymentInput" type="text" placeholder="gpt-4o-mini" value="${escapeHtml(state.settings.azureDeployment || "")}" />
+                    </label>
+                    <label>Azure API Version
+                      <input id="azureApiVersionInput" type="text" placeholder="2024-10-21" value="${escapeHtml(state.settings.azureApiVersion || "2024-10-21")}" />
+                    </label>
+                  ` : ""}
+                  <div class="actions" style="margin-top:0.6rem;">
+                    <button class="btn secondary" id="testAiSettingsBtn">Test API Connection</button>
+                    <button class="btn secondary" id="saveAiSettingsBtn">Save AI Settings</button>
+                    <a class="btn ghost" href="${setupLink}" target="_blank" rel="noopener noreferrer">Provider API Setup Instructions</a>
+                  </div>
+                  ${preflight.errors.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight errors</strong><ul class="evidence-list">${preflight.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+                  ${preflight.warnings.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight warnings</strong><ul class="evidence-list">${preflight.warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+                  <div class="question" style="margin-top:0.7rem;">
+                    <p class="hint"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align 42 you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
+                    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.45rem;">
+                      <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
+                      <span>I understand</span>
+                    </label>
+                  </div>
+                  <details class="question" style="margin-top:0.5rem;">
+                    <summary style="cursor:pointer;"><strong>API Diagnostics</strong></summary>
+                    <p class="hint">Recent connection and request diagnostics (redacted).</p>
+                    <div class="actions">
+                      <button class="btn ghost small" type="button" id="clearAiDiagnosticsBtn">Clear Diagnostics</button>
+                      <button class="btn ghost small" type="button" id="exportAiDiagnosticsBtn">Export Diagnostics JSON</button>
+                    </div>
+                    ${diagnostics.length ? `<ul class="evidence-list">${diagnostics.map((d) => `<li><strong>${escapeHtml(new Date(d.at).toLocaleString())}</strong> [${escapeHtml(d.status)}] ${escapeHtml(d.provider)} / ${escapeHtml(d.stage)}${d.action ? ` / ${escapeHtml(d.action)}` : ""}: ${escapeHtml(d.message)}<details><summary>Details</summary><pre class="diag-pre">${escapeHtml(JSON.stringify(d.details || {}, null, 2))}</pre></details></li>`).join("")}</ul>` : "<p class=\"hint\">No diagnostics yet.</p>"}
+                  </details>
+                  <p class="hint" style="margin-top:0.5rem;">Choose session-only storage for stronger local key hygiene.</p>
+                </div>
+              </details>
+              ` : ""}
             </div>
           </div>
-         ` : ""}
-        </div>
 
-        <div class="list-head">
-          <h2 style="margin:0;">Saved Assessments</h2>
-          <span class="meta-pill">${rows.length} total</span>
-        </div>
-        <div class="assessment-list">
-          ${rows.length ? rows.map((a) => `
-            <div class="assessment-row">
-              <div>
-                <h3>${escapeHtml(a.title)}</h3>
-                <p>Updated: ${escapeHtml(new Date(a.updatedAt).toLocaleString())} | Score: ${weightedScorePercent(a)}% | Completion: ${completionPercent(a)}%</p>
-                <div class="progress-bar tiny"><div style="width:${completionPercent(a)}%"></div></div>
+          <div class="setup-col">
+            <div class="question">
+              <h3>${hasProfile ? (showProfileEditor ? "Edit Profile" : "User Profile") : "Set Up Your Profile"}</h3>
+              ${hasProfile && !showProfileEditor ? `
+                <p class="hint"><strong>Name:</strong> ${escapeHtml(state.profile.name)}</p>
+                <p class="hint"><strong>Email:</strong> ${escapeHtml(state.profile.email)}</p>
+                ${state.profile.role ? `<p class="hint"><strong>Role:</strong> ${escapeHtml(state.profile.role)}</p>` : ""}
+                <div class="actions" style="margin-top:0.7rem;">
+                  <button class="btn secondary" id="editProfileBtnInline">Edit Profile</button>
+                  <button class="btn ghost" id="logoutBtn">Log Out</button>
+                </div>
+              ` : `
+                <p class="hint">Enter your details to start or open assessments. All profile fields are shown here together.</p>
+                <div class="row">
+                  <label>Name<input id="profileName" type="text" placeholder="Example: Alex Morgan" value="${escapeHtml(state.profile?.name || "")}" /></label>
+                  <label>Email<input id="profileEmail" type="email" placeholder="Example: alex@company.com" value="${escapeHtml(state.profile?.email || "")}" /></label>
+                </div>
+                <label style="margin-top:0.6rem;">Role<input id="profileRole" type="text" placeholder="Example: Risk Manager" value="${escapeHtml(state.profile?.role || "")}" /></label>
+                <div class="actions" style="margin-top:0.7rem;">
+                  <button class="btn primary" id="saveProfileBtn">Save Profile</button>
+                  ${hasProfile ? `<button class="btn ghost" id="cancelProfileBtn">Close Profile</button>` : ""}
+                  ${hasProfile ? `<button class="btn ghost" id="logoutBtn">Log Out</button>` : ""}
+                  ${hasProfile ? `<button class="btn ghost" id="deleteProfileBtn">Delete Profile</button>` : ""}
+                </div>
+              `}
+            </div>
+
+            <div class="question">
+              <div class="list-head" style="margin-bottom:0.5rem;">
+                <h3 style="margin:0;">Saved Assessments</h3>
+                <span class="meta-pill">${rows.length} total</span>
               </div>
-              <div class="actions">
-                <button class="btn secondary" data-open="${a.id}">Open</button>
-                <button class="btn ghost" data-delete="${a.id}">Delete</button>
+              <div class="assessment-list">
+                ${rows.length ? rows.map((a) => `
+                  <div class="assessment-row">
+                    <div>
+                      <h3>${escapeHtml(a.title)}</h3>
+                      <p>Updated: ${escapeHtml(new Date(a.updatedAt).toLocaleString())} | Score: ${weightedScorePercent(a)}% | Completion: ${completionPercent(a)}%</p>
+                      <div class="progress-bar tiny"><div style="width:${completionPercent(a)}%"></div></div>
+                    </div>
+                    <div class="actions">
+                      <button class="btn secondary" data-open="${a.id}">Open</button>
+                      <button class="btn ghost" data-delete="${a.id}">Delete</button>
+                    </div>
+                  </div>
+                `).join("") : `<p class="hint">No assessments yet.</p>`}
               </div>
             </div>
-          `).join("") : `<p>No assessments yet.</p>`}
+          </div>
         </div>
       </div>
     </div>
@@ -2889,6 +2905,10 @@ function renderWelcome() {
     state.ui.profileEditorOpen = !state.ui.profileEditorOpen;
     render();
   });
+  document.getElementById("editProfileBtnInline")?.addEventListener("click", () => {
+    state.ui.profileEditorOpen = true;
+    render();
+  });
   document.getElementById("cancelProfileBtn")?.addEventListener("click", () => {
     state.ui.profileEditorOpen = false;
     render();
@@ -2931,6 +2951,10 @@ function renderWelcome() {
     render();
   });
 
+  document.getElementById("aiSettingsAccordion")?.addEventListener("toggle", (e) => {
+    state.settings.settingsOpen = e.target.open;
+    saveSettings();
+  });
   document.getElementById("aiSettingsToggleBtn")?.addEventListener("click", () => {
     state.settings.settingsOpen = !state.settings.settingsOpen;
     saveSettings();
@@ -6374,7 +6398,6 @@ function renderRoadmap(assessment) {
 
     <div class="actions">
       <button class="btn secondary" id="downloadRoadmapPngBtn">Download Roadmap PNG</button>
-      <button class="btn secondary" id="downloadRoadmapPptBtn">Download Roadmap PPTX</button>
     </div>
     ${renderNav(assessment)}
   `;
@@ -6396,10 +6419,11 @@ function renderRoadmap(assessment) {
     a.download = "align42-roadmap.png";
     a.click();
   });
-  document.getElementById("downloadRoadmapPptBtn").addEventListener("click", () => {
-    const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
-    download("align42-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
-  });
+  // Disabled: PPT generation feature code retained (see roadmapPptxBytes), but PPT download option on roadmap screen is disabled.
+  // document.getElementById("downloadRoadmapPptBtn")?.addEventListener("click", () => {
+  //   const pptx = roadmapPptxBytes(assessment, roadmapDataUrl, timelineRows, actionPlan);
+  //   download("align42-roadmap.pptx", "application/vnd.openxmlformats-officedocument.presentationml.presentation", pptx);
+  // });
   bindNav(assessment);
 }
 
