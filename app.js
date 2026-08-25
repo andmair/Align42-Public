@@ -2728,83 +2728,86 @@ function renderWelcome() {
               ` : ""}
 
               ${mode === "advanced" && aiMode ? `
-              <div class="question" id="aiSettingsPanel" style="margin-top:0.7rem; background:var(--bg-card); border:1px solid var(--line); padding:0.75rem; border-radius:8px;">
-                <h3 style="margin:0 0 0.35rem;">⚙ AI Settings</h3>
-                
-                <div class="question" style="margin-bottom:0.75rem; background:var(--bg-subtle, #f8f9fa); padding:0.6rem; border-radius:6px; border:1px solid var(--line);">
-                  <p class="hint" style="margin:0;"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align42, you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
-                  <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; font-weight:600; cursor:pointer;">
-                    <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
-                    <span>I understand and accept the AI disclaimer</span>
-                  </label>
-                </div>
-
-                ${!state.settings.aiDisclaimerAcknowledged ? `<p class="hint" style="color:var(--warn, #c92a2a); margin-bottom:0.5rem; font-weight:600;">⚠️ Select the AI disclaimer checkbox above to unlock and update AI settings.</p>` : ""}
-
-                <fieldset ${!state.settings.aiDisclaimerAcknowledged ? "disabled" : ""} style="border:none; padding:0; margin:0;">
-                  <label style="margin-top:0.4rem;">Credential Storage
-                    <select id="aiCredentialStorageSelect">
-                      <option value="session" ${state.settings.aiCredentialStorage === "persistent" ? "" : "selected"}>Session only (recommended)</option>
-                      <option value="persistent" ${state.settings.aiCredentialStorage === "persistent" ? "selected" : ""}>Persist on this device</option>
-                    </select>
-                  </label>
-                  <p class="hint">${state.settings.aiCredentialStorage === "persistent" ? "Provider credentials are persisted in local browser storage on this device." : "Provider credentials are kept in-memory for this session and are not persisted to local storage."}</p>
-                  <label>AI Provider
-                    <select id="aiProviderSelect">
-                      <option value="openai" ${provider === "openai" ? "selected" : ""}>OpenAI</option>
-                      <option value="anthropic" ${provider === "anthropic" ? "selected" : ""}>Anthropic Claude</option>
-                      <option value="gemini" ${provider === "gemini" ? "selected" : ""}>Google Gemini</option>
-                      <option value="azure_openai" ${provider === "azure_openai" ? "selected" : ""}>Azure OpenAI</option>
-                    </select>
-                  </label>
-                  ${provider === "openai" ? `
-                    <label>OpenAI API Key
-                      <input id="openaiKeyInput" type="password" placeholder="sk-..." value="${escapeHtml(state.settings.openaiKey || "")}" />
+              <details class="question" id="aiSettingsAccordion" style="margin-top:0.7rem;" ${state.settings.settingsOpen ? "open" : ""}>
+                <summary style="cursor:pointer; font-weight:700; font-size:0.95rem; user-select:none;">⚙ AI Settings</summary>
+                <div id="aiSettingsPanel" style="margin-top:0.65rem;">
+                  
+                  <div class="question" style="margin-bottom:0.75rem; background:var(--bg-subtle, #f8f9fa); padding:0.6rem; border-radius:6px; border:1px solid var(--line);">
+                    <p class="hint" style="margin:0;"><strong>Disclaimer:</strong> Although every attempt is made to mask sensitive details when using AI services within Align42, you should check that the service you are connecting has appropriate data security safeguards based on your organisation's AI policy.</p>
+                    <label style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; font-weight:600; cursor:pointer;">
+                      <input type="checkbox" id="aiDisclaimerCheck" ${state.settings.aiDisclaimerAcknowledged ? "checked" : ""} />
+                      <span>I understand and accept the AI disclaimer</span>
                     </label>
-                  ` : ""}
-                  ${provider === "anthropic" ? `
-                    <label>Anthropic API Key
-                      <input id="anthropicKeyInput" type="password" placeholder="sk-ant-..." value="${escapeHtml(state.settings.anthropicKey || "")}" />
-                    </label>
-                  ` : ""}
-                  ${provider === "gemini" ? `
-                    <label>Gemini API Key
-                      <input id="geminiKeyInput" type="password" placeholder="AIza..." value="${escapeHtml(state.settings.geminiKey || "")}" />
-                    </label>
-                  ` : ""}
-                  ${provider === "azure_openai" ? `
-                    <label>Azure OpenAI API Key
-                      <input id="azureApiKeyInput" type="password" placeholder="Azure API key" value="${escapeHtml(state.settings.azureApiKey || "")}" />
-                    </label>
-                    <label>Azure Endpoint
-                      <input id="azureEndpointInput" type="text" placeholder="https://your-resource.openai.azure.com" value="${escapeHtml(state.settings.azureEndpoint || "")}" />
-                    </label>
-                    <label>Azure Deployment Name
-                      <input id="azureDeploymentInput" type="text" placeholder="gpt-4o-mini" value="${escapeHtml(state.settings.azureDeployment || "")}" />
-                    </label>
-                    <label>Azure API Version
-                      <input id="azureApiVersionInput" type="text" placeholder="2024-10-21" value="${escapeHtml(state.settings.azureApiVersion || "2024-10-21")}" />
-                    </label>
-                  ` : ""}
-                  <div class="actions" style="margin-top:0.6rem;">
-                    <button class="btn secondary" id="testAiSettingsBtn">Test API Connection</button>
-                    <button class="btn secondary" id="saveAiSettingsBtn">Save AI Settings</button>
-                    <a class="btn ghost" href="${setupLink}" target="_blank" rel="noopener noreferrer">Provider API Setup Instructions</a>
                   </div>
-                  ${preflight.errors.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight errors</strong><ul class="evidence-list">${preflight.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-                  ${preflight.warnings.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight warnings</strong><ul class="evidence-list">${preflight.warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
-                  <details class="question" style="margin-top:0.5rem;">
-                    <summary style="cursor:pointer;"><strong>API Diagnostics</strong></summary>
-                    <p class="hint">Recent connection and request diagnostics (redacted).</p>
-                    <div class="actions">
-                      <button class="btn ghost small" type="button" id="clearAiDiagnosticsBtn">Clear Diagnostics</button>
-                      <button class="btn ghost small" type="button" id="exportAiDiagnosticsBtn">Export Diagnostics JSON</button>
+
+                  ${!state.settings.aiDisclaimerAcknowledged ? `<p class="hint" style="color:var(--warn, #c92a2a); margin-bottom:0.5rem; font-weight:600;">⚠️ Select the AI disclaimer checkbox above to unlock and update AI settings.</p>` : ""}
+
+                  <fieldset ${!state.settings.aiDisclaimerAcknowledged ? "disabled" : ""} style="border:none; padding:0; margin:0;">
+                    <label style="margin-top:0.4rem;">Credential Storage
+                      <select id="aiCredentialStorageSelect">
+                        <option value="session" ${state.settings.aiCredentialStorage === "persistent" ? "" : "selected"}>Session only (recommended)</option>
+                        <option value="persistent" ${state.settings.aiCredentialStorage === "persistent" ? "selected" : ""}>Persist on this device</option>
+                      </select>
+                    </label>
+                    <p class="hint">${state.settings.aiCredentialStorage === "persistent" ? "Provider credentials are persisted in local browser storage on this device." : "Provider credentials are kept in-memory for this session and are not persisted to local storage."}</p>
+                    <label>AI Provider
+                      <select id="aiProviderSelect">
+                        <option value="openai" ${provider === "openai" ? "selected" : ""}>OpenAI</option>
+                        <option value="anthropic" ${provider === "anthropic" ? "selected" : ""}>Anthropic Claude</option>
+                        <option value="gemini" ${provider === "gemini" ? "selected" : ""}>Google Gemini</option>
+                        <option value="azure_openai" ${provider === "azure_openai" ? "selected" : ""}>Azure OpenAI</option>
+                      </select>
+                    </label>
+                    ${provider === "openai" ? `
+                      <label>OpenAI API Key
+                        <input id="openaiKeyInput" type="password" placeholder="sk-..." value="${escapeHtml(state.settings.openaiKey || "")}" />
+                      </label>
+                    ` : ""}
+                    ${provider === "anthropic" ? `
+                      <label>Anthropic API Key
+                        <input id="anthropicKeyInput" type="password" placeholder="sk-ant-..." value="${escapeHtml(state.settings.anthropicKey || "")}" />
+                      </label>
+                    ` : ""}
+                    ${provider === "gemini" ? `
+                      <label>Gemini API Key
+                        <input id="geminiKeyInput" type="password" placeholder="AIza..." value="${escapeHtml(state.settings.geminiKey || "")}" />
+                      </label>
+                    ` : ""}
+                    ${provider === "azure_openai" ? `
+                      <label>Azure OpenAI API Key
+                        <input id="azureApiKeyInput" type="password" placeholder="Azure API key" value="${escapeHtml(state.settings.azureApiKey || "")}" />
+                      </label>
+                      <label>Azure Endpoint
+                        <input id="azureEndpointInput" type="text" placeholder="https://your-resource.openai.azure.com" value="${escapeHtml(state.settings.azureEndpoint || "")}" />
+                      </label>
+                      <label>Azure Deployment Name
+                        <input id="azureDeploymentInput" type="text" placeholder="gpt-4o-mini" value="${escapeHtml(state.settings.azureDeployment || "")}" />
+                      </label>
+                      <label>Azure API Version
+                        <input id="azureApiVersionInput" type="text" placeholder="2024-10-21" value="${escapeHtml(state.settings.azureApiVersion || "2024-10-21")}" />
+                      </label>
+                    ` : ""}
+                    <div class="actions" style="margin-top:0.6rem;">
+                      <button class="btn secondary" id="testAiSettingsBtn">Test API Connection</button>
+                      <button class="btn secondary" id="saveAiSettingsBtn">Save AI Settings</button>
+                      <a class="btn ghost" href="${setupLink}" target="_blank" rel="noopener noreferrer">Provider API Setup Instructions</a>
                     </div>
-                    ${diagnostics.length ? `<ul class="evidence-list">${diagnostics.map((d) => `<li><strong>${escapeHtml(new Date(d.at).toLocaleString())}</strong> [${escapeHtml(d.status)}] ${escapeHtml(d.provider)} / ${escapeHtml(d.stage)}${d.action ? ` / ${escapeHtml(d.action)}` : ""}: ${escapeHtml(d.message)}<details><summary>Details</summary><pre class="diag-pre">${escapeHtml(JSON.stringify(d.details || {}, null, 2))}</pre></details></li>`).join("")}</ul>` : "<p class=\"hint\">No diagnostics yet.</p>"}
-                  </details>
-                  <p class="hint" style="margin-top:0.5rem;">Choose session-only storage for stronger local key hygiene.</p>
-                </fieldset>
-              </div>
+                    ${preflight.errors.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight errors</strong><ul class="evidence-list">${preflight.errors.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+                    ${preflight.warnings.length ? `<div class="evidence" style="margin-top:0.5rem;"><strong>Provider preflight warnings</strong><ul class="evidence-list">${preflight.warnings.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul></div>` : ""}
+                    
+                    <details class="question" style="margin-top:0.75rem;">
+                      <summary style="cursor:pointer; font-weight:600;">📊 API Diagnostics</summary>
+                      <p class="hint" style="margin-top:0.4rem;">Recent connection and request diagnostics (redacted).</p>
+                      <div class="actions" style="margin-top:0.4rem;">
+                        <button class="btn ghost small" type="button" id="clearAiDiagnosticsBtn">Clear Diagnostics</button>
+                        <button class="btn ghost small" type="button" id="exportAiDiagnosticsBtn">Export Diagnostics JSON</button>
+                      </div>
+                      ${diagnostics.length ? `<ul class="evidence-list" style="margin-top:0.5rem;">${diagnostics.map((d) => `<li><strong>${escapeHtml(new Date(d.at).toLocaleString())}</strong> [${escapeHtml(d.status)}] ${escapeHtml(d.provider)} / ${escapeHtml(d.stage)}${d.action ? ` / ${escapeHtml(d.action)}` : ""}: ${escapeHtml(d.message)}<details><summary>Details</summary><pre class="diag-pre">${escapeHtml(JSON.stringify(d.details || {}, null, 2))}</pre></details></li>`).join("")}</ul>` : "<p class=\"hint\" style=\"margin-top:0.4rem;\">No diagnostics recorded yet.</p>"}
+                    </details>
+                    <p class="hint" style="margin-top:0.5rem;">Choose session-only storage for stronger local key hygiene.</p>
+                  </fieldset>
+                </div>
+              </details>
               ` : ""}
             </div>
           </div>
@@ -2961,6 +2964,10 @@ function renderWelcome() {
     render();
   });
 
+  document.getElementById("aiSettingsAccordion")?.addEventListener("toggle", (e) => {
+    state.settings.settingsOpen = e.target.open;
+    saveSettings();
+  });
   document.getElementById("aiDisclaimerCheck")?.addEventListener("change", (e) => {
     state.settings.aiDisclaimerAcknowledged = e.target.checked;
     saveSettings();
