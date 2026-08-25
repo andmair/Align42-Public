@@ -627,9 +627,7 @@ async function bootstrapSecureState() {
   state.profile = profile ? normalizedProfile(profile) : null;
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   state.assessments = assessments;
-  if (!state.currentAssessmentId && state.assessments.length > 0) {
-    state.currentAssessmentId = state.assessments[0].id;
-  }
+  state.currentAssessmentId = null;
   ensureSettingsDefaults();
   storageReady = true;
   render();
