@@ -70,6 +70,7 @@ jobs:
             git remote remove public 2>/dev/null || true
             git remote add public https://github.com/andmair/Align42-Public.git
 
+            # Deeper verification: capture body + status
             status=$(curl -s -o /tmp/resp -w "%{http_code}" -H "Authorization: token $PUBLIC_REPO_PAT" https://api.github.com/repos/andmair/Align42-Public)
             echo "Repository API HTTP status: $status"
             if [ "$status" -ne 200 ]; then
@@ -79,6 +80,8 @@ jobs:
               exit 1
             fi
             echo "PAT verification succeeded (HTTP 200)."
+
+            # Configure git to send the PAT in an Authorization header instead of embedding it in the URL
             git config --local http.https://github.com/.extraheader "AUTHORIZATION: Bearer $PUBLIC_REPO_PAT"
             echo "AUTH_METHOD=http-header" >> $GITHUB_ENV
           else
@@ -98,5 +101,13 @@ jobs:
       - name: Push tags
         run: |
           set -euo pipefail
-          if [ "${AUTH_METHOD:-}"](#)
-
+          if [ "${AUTH_METHOD:-}" = "http-header" ]; then
+            git -c http.extraheader="AUTHORIZATION: Bearer $PUBLIC_REPO_PAT" push --tags public
+          else
+            git push --tags public
+          fi
+
+      # Optional destructive mirror (uncomment if you intend to fully mirror, including deletions)
+      # - name: Mirror push (DANGEROUS)
+      #   if: github.event_name == 'workflow_dispatch'
+      #   run: git push --mirror public
