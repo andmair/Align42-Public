@@ -264,7 +264,7 @@ let state = {
   view: "home",
   ui: { uploadOpen: {}, summaryOpen: {}, profileEditorOpen: false, loggedOut: false }
 };
-const ALIGN42_BUILD_VERSION = "2026.08.06-v1";
+const ALIGN42_BUILD_VERSION = "2026.08.26-v2";
 let storageReady = false;
 let storageCryptoAvailable = false;
 let storageSecurityBlocked = false;
