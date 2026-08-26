@@ -64,26 +64,38 @@ jobs:
             git remote remove public 2>/dev/null || true
             git remote add public git@github.com:andmair/Align42-Public.git
             echo "Public remote set to SSH git@github.com:andmair/Align42-Public.git"
-            echo "AUTH_METHOD=ssh" >> $GITHUB_ENV
+            echo "Configured deploy key (SSH)."
           elif [ -n "$PUBLIC_REPO_PAT" ]; then
             echo "Configuring public remote using PAT with Authorization header..."
             git remote remove public 2>/dev/null || true
             git remote add public https://github.com/andmair/Align42-Public.git
 
-            # Deeper verification: capture body + status
+            # Verify access and check for archived/disabled state (capture body + status).
             status=$(curl -s -o /tmp/resp -w "%{http_code}" -H "Authorization: token $PUBLIC_REPO_PAT" https://api.github.com/repos/andmair/Align42-Public)
             echo "Repository API HTTP status: $status"
             if [ "$status" -ne 200 ]; then
               echo "Repository API response body:"
               sed -n '1,200p' /tmp/resp || true
               echo "PUBLIC_REPO_PAT cannot access https://github.com/andmair/Align42-Public (HTTP $status)."
+              echo "Ensure the PAT includes the target repository with Code (Contents) read & write, the token is not expired, and the token owner has write access."
               exit 1
             fi
-            echo "PAT verification succeeded (HTTP 200)."
 
+            if grep -q '"archived": *true' /tmp/resp; then
+              echo "Target repository is archived — pushes are disabled."
+              sed -n '1,200p' /tmp/resp || true
+              exit 1
+            fi
+            if grep -q '"disabled": *true' /tmp/resp; then
+              echo "Target repository is disabled — pushes are disabled."
+              sed -n '1,200p' /tmp/resp || true
+              exit 1
+            fi
+
+            echo "PAT verification succeeded (HTTP 200) and repo is active."
             # Configure git to send the PAT in an Authorization header instead of embedding it in the URL
             git config --local http.https://github.com/.extraheader "AUTHORIZATION: Bearer $PUBLIC_REPO_PAT"
-            echo "AUTH_METHOD=http-header" >> $GITHUB_ENV
+            echo "Configured http.extraheader for HTTPS pushes."
           else
             echo "ERROR: neither DEPLOY_KEY nor PUBLIC_REPO_PAT is set. Cannot configure public remote."
             exit 1
@@ -92,22 +104,15 @@ jobs:
       - name: Push branches (non-destructive)
         run: |
           set -euo pipefail
-          if [ "${AUTH_METHOD:-}" = "http-header" ]; then
-            git -c http.extraheader="AUTHORIZATION: Bearer $PUBLIC_REPO_PAT" push --prune public refs/heads/*:refs/heads/*
-          else
-            git push --prune public refs/heads/*:refs/heads/*
-          fi
+          # git will use the http.extraheader set above (or SSH if deploy key was used)
+          git push --prune public refs/heads/*:refs/heads/*
 
       - name: Push tags
         run: |
           set -euo pipefail
-          if [ "${AUTH_METHOD:-}" = "http-header" ]; then
-            git -c http.extraheader="AUTHORIZATION: Bearer $PUBLIC_REPO_PAT" push --tags public
-          else
-            git push --tags public
-          fi
+          git push --tags public
 
       # Optional destructive mirror (uncomment if you intend to fully mirror, including deletions)
       # - name: Mirror push (DANGEROUS)
-      #   if: github.event_name == 'workflow_dispatch'
+      #   if: github.event_name == 'workflow_dispatch' # limit when it can be run
       #   run: git push --mirror public
