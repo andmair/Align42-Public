@@ -261,7 +261,7 @@ let state = {
   settings: { ...DEFAULT_SETTINGS },
   assessments: [],
   currentAssessmentId: null,
-  view: "assessment",
+  view: "home",
   ui: { uploadOpen: {}, summaryOpen: {}, profileEditorOpen: false, loggedOut: false }
 };
 const ALIGN42_BUILD_VERSION = "2026.08.06-v1";
@@ -520,7 +520,7 @@ async function clearVisibleSessionState() {
   state.profile = null;
   state.assessments = [];
   state.currentAssessmentId = null;
-  state.view = "assessment";
+  state.view = "home";
   state.settings = {
     ...state.settings,
     aiMode: false,
@@ -558,7 +558,7 @@ async function deleteProfileAndLocalData() {
   state.profile = null;
   state.assessments = [];
   state.currentAssessmentId = null;
-  state.view = "assessment";
+  state.view = "home";
   state.settings = {
     ...state.settings,
     aiMode: false,
@@ -628,6 +628,7 @@ async function bootstrapSecureState() {
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
   state.assessments = assessments;
   state.currentAssessmentId = null;
+  state.view = "home";
   ensureSettingsDefaults();
   storageReady = true;
   render();
@@ -833,7 +834,7 @@ function goHome() {
   if (active) flushAssessmentSave(active);
   stopDictation();
   state.currentAssessmentId = null;
-  state.view = "assessment";
+  state.view = "home";
   render();
 }
 
@@ -2650,7 +2651,7 @@ function render() {
   }
   const assessment = currentAssessment();
   if (state.view === "delegations" && assessment) return renderDelegationsPage(assessment);
-  if (assessment) return renderAssessment(assessment);
+  if (state.view === "assessment" && assessment) return renderAssessment(assessment);
   return renderWelcome();
 }
 
@@ -2703,14 +2704,14 @@ function renderWelcome() {
             ` : ""}
             <div class="question">
               <h3>Assessment Mode</h3>
-              <p class="hint"><strong>Select your assessment mode before you start.</strong> Simple mode is optimized for generalists, while Advanced mode supports deeper specialist scoring and richer analysis.</p>
+              <p class="hint"><strong>Select your assessment mode before you start.</strong> Simple mode is optimized for generalists and does not use AI, while Advanced mode supports deeper specialist scoring, richer analysis, and optional AI capabilities.</p>
               <label style="display:flex; align-items:center; gap:0.5rem;">
                 <select id="assessmentModeSelect">
                   <option value="simple" ${mode === "simple" ? "selected" : ""}>Simple (generalist)</option>
                   <option value="advanced" ${mode === "advanced" ? "selected" : ""}>Advanced (specialist)</option>
                 </select>
               </label>
-              <p class="hint">${mode === "advanced" ? "Advanced mode: 0.5-step scoring, richer evidence quality breakdown, and nuanced AI recommendations." : "Simple mode: quick 1-5 scoring with concise guidance."}</p>
+              <p class="hint">${mode === "advanced" ? "Advanced mode: 0.5-step scoring, richer evidence quality breakdown, and nuanced AI recommendations." : "Simple mode: quick 1-5 scoring with concise guidance (does not use AI)."}</p>
               ${mode === "advanced" ? `
               <div style="margin-top:0.7rem; border-top:1px dashed var(--line); padding-top:0.7rem;">
                 <h3 style="margin:0 0 0.35rem;">AI Mode (Advanced only)</h3>
