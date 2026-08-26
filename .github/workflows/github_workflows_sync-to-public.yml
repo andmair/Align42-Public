@@ -49,7 +49,7 @@ jobs:
             echo "DEPLOY_KEY secret is present (length masked)."
           fi
 
-      - name: Configure public remote (SSH deploy key preferred, fallback to PAT)
+      - name: Configure public remote (SSH deploy key preferred, fallback to PAT via http.extraheader)
         env:
           PUBLIC_REPO_PAT: ${{ secrets.PUBLIC_REPO_PAT }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
@@ -64,23 +64,23 @@ jobs:
             git remote remove public 2>/dev/null || true
             git remote add public git@github.com:andmair/Align42-Public.git
             echo "Public remote set to SSH git@github.com:andmair/Align42-Public.git"
+            echo "AUTH_METHOD=ssh" >> $GITHUB_ENV
           elif [ -n "$PUBLIC_REPO_PAT" ]; then
-            echo "Configuring public remote using PUBLIC_REPO_PAT and verifying access..."
-            PUBLIC_URL="https://x-access-token:${PUBLIC_REPO_PAT}@github.com/andmair/Align42-Public.git"
+            echo "Configuring public remote using PAT with Authorization header..."
             git remote remove public 2>/dev/null || true
-            git remote add public "$PUBLIC_URL"
+            git remote add public https://github.com/andmair/Align42-Public.git
 
-            # Deeper verification: capture body + status so we can see why GitHub might reject requests.
             status=$(curl -s -o /tmp/resp -w "%{http_code}" -H "Authorization: token $PUBLIC_REPO_PAT" https://api.github.com/repos/andmair/Align42-Public)
             echo "Repository API HTTP status: $status"
             if [ "$status" -ne 200 ]; then
               echo "Repository API response body:"
               sed -n '1,200p' /tmp/resp || true
               echo "PUBLIC_REPO_PAT cannot access https://github.com/andmair/Align42-Public (HTTP $status)."
-              echo "Ensure the PAT includes the target repository with Code (Contents) read & write, the token is not expired, and the token owner has write access."
               exit 1
             fi
             echo "PAT verification succeeded (HTTP 200)."
+            git config --local http.https://github.com/.extraheader "AUTHORIZATION: Bearer $PUBLIC_REPO_PAT"
+            echo "AUTH_METHOD=http-header" >> $GITHUB_ENV
           else
             echo "ERROR: neither DEPLOY_KEY nor PUBLIC_REPO_PAT is set. Cannot configure public remote."
             exit 1
@@ -88,9 +88,15 @@ jobs:
 
       - name: Push branches (non-destructive)
         run: |
-          # Push all branches and prune remote branches that were deleted locally
-          git push --prune public refs/heads/*:refs/heads/*
+          set -euo pipefail
+          if [ "${AUTH_METHOD:-}" = "http-header" ]; then
+            git -c http.extraheader="AUTHORIZATION: Bearer $PUBLIC_REPO_PAT" push --prune public refs/heads/*:refs/heads/*
+          else
+            git push --prune public refs/heads/*:refs/heads/*
+          fi
 
       - name: Push tags
         run: |
-          git push --tags public
+          set -euo pipefail
+          if [ "${AUTH_METHOD:-}"](#)
+
