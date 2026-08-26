@@ -626,6 +626,13 @@ async function bootstrapSecureState() {
 
   state.profile = profile ? normalizedProfile(profile) : null;
   state.settings = { ...DEFAULT_SETTINGS, ...(settings || {}) };
+  if (needsRefresh || !settings) {
+    state.settings.assessmentMode = "simple";
+    state.settings.aiMode = false;
+    state.settings.settingsOpen = false;
+    state.settings.aiDisclaimerAcknowledged = false;
+    await persistSecureStorage(STORAGE.settings, state.settings);
+  }
   state.assessments = assessments;
   state.currentAssessmentId = null;
   state.view = "home";
