@@ -88,6 +88,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def add_security_headers(self):
         """Add comprehensive security headers."""
+        self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-XSS-Protection", "1; mode=block")

@@ -64,6 +64,8 @@ class TestServerStaticDelivery(unittest.TestCase):
         server.Handler.send_json(capture, 410, {"error": "deprecated"})
         self.assertEqual(capture.status, 410)
         self.assertEqual(capture.headers.get("Content-Type"), "application/json; charset=utf-8")
+        self.assertEqual(capture.headers.get("Cache-Control"), "no-cache, no-store, must-revalidate")
+        self.assertEqual(capture.headers.get("Pragma"), "no-cache")
         self.assertEqual(capture.headers.get("X-Content-Type-Options"), "nosniff")
         self.assertEqual(capture.headers.get("X-Frame-Options"), "DENY")
         self.assertEqual(capture.headers.get("Referrer-Policy"), "no-referrer")
