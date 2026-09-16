@@ -3,14 +3,41 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: align42:local
+    image: align42:latest
+    container_name: align42
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:8000"
     environment:
       PORT: "8000"
+      HOST: "0.0.0.0"
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    profiles:
+      - prod
+
+  # Development mode with hot reload
+  align42-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: align42:dev
+    container_name: align42-dev
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      PORT: "8000"
+      HOST: "0.0.0.0"
     volumes:
       - .:/app
       - /app/__pycache__
+      - /app/.git
     restart: unless-stopped
     develop:
       watch:
@@ -20,3 +47,8 @@ services:
           ignore:
             - __pycache__
             - .git
+            - .gitignore
+            - logs
+            - .pytest_cache
+    profiles:
+      - dev
